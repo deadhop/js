@@ -28,7 +28,7 @@ const byLabel = (page: Page, label: string) => click(page, `[aria-label="${label
 async function reopenUntil(page: Page, tab: string, text: string, ms = 150_000) {
   const deadline = Date.now() + ms;
   for (;;) {
-    await button(page, tab === 'Overview' ? 'Settings' : 'Overview');
+    await button(page, tab === 'Overview' ? 'Network' : 'Overview');
     await button(page, tab);
     await new Promise((r) => setTimeout(r, 1500));
     if ((await page.evaluate(() => document.body.innerText)).toLowerCase().includes(text.toLowerCase())) return;
@@ -78,7 +78,7 @@ describe.skipIf(!existsSync(chrome) || binary === null)('proxy pool in a real br
   it('lists the environment proxies, reorders them, and saves a strategy', async () => {
     await hasText(page, 'Reachable');
     await shot('08-overview-proxy-active');
-    await button(page, 'Settings');
+    await button(page, 'Network');
     await hasText(page, 'Proxy list, in order');
     await hasText(page, 'in use');
     const [first, second] = stack.proxies.map((p) => p.url);
@@ -102,7 +102,7 @@ describe.skipIf(!existsSync(chrome) || binary === null)('proxy pool in a real br
     await shot('05-mode-chaos', await section());
     await button(page, 'Save changes');
     await hasText(page, 'No unsaved changes.');
-    await reopenUntil(page, 'Settings', 'next switch in', 60_000);
+    await reopenUntil(page, 'Network', 'next switch in', 60_000);
     await shot('06-strategy-active-chaos', await section());
     await choose(page, 'Operators only');
     await shot('07-offline-policy', await section());
@@ -113,7 +113,7 @@ describe.skipIf(!existsSync(chrome) || binary === null)('proxy pool in a real br
   it('shows rotation suspended with one proxy left, then offline with none', async () => {
     // Failover order is now [second, first]; chaos needs two reachable proxies.
     await stack.proxies[0].stop();
-    await reopenUntil(page, 'Settings', 'Suspended: rotation needs 2 reachable proxies, 1 is');
+    await reopenUntil(page, 'Network', 'Suspended: rotation needs 2 reachable proxies, 1 is');
     await shot('09-strategy-suspended', await section());
     await reopenUntil(page, 'Overview', 'Rotation suspended');
     await shot('10-overview-proxy-suspended');
@@ -122,7 +122,7 @@ describe.skipIf(!existsSync(chrome) || binary === null)('proxy pool in a real br
     await reopenUntil(page, 'Overview', 'only operators are served');
     await hasText(page, 'No proxy reachable');
     await shot('11-overview-proxy-offline');
-    await reopenUntil(page, 'Settings', 'Offline: no proxy is reachable');
+    await reopenUntil(page, 'Network', 'Offline: no proxy is reachable');
     await shot('12-strategy-offline', await section());
   }, 420_000);
 
