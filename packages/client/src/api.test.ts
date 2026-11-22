@@ -51,11 +51,14 @@ describe('PayApi', () => {
     expect(await api.createInvoice({ amount_sat: 50_000, memo: 'table 4' })).toEqual(invoice());
     expect((await api.getInvoice(invoice().id)).status).toBe('confirmed');
     expect(await api.call('get_invoice', { id: invoice().id }, InvoiceSchema)).toMatchObject({ status: 'confirmed' });
+    // A longer wait is passed on only when one is asked for.
+    await api.call('get_invoice', { id: invoice().id }, InvoiceSchema, 120_000);
     expect(caller.mock.calls.map((c) => c)).toEqual([
       ['get_info', {}],
       ['create_invoice', { amount_sat: 50_000, memo: 'table 4' }],
       ['get_invoice', { id: invoice().id }],
       ['get_invoice', { id: invoice().id }],
+      ['get_invoice', { id: invoice().id }, 120_000],
     ]);
   });
 
@@ -148,6 +151,8 @@ describe('connect', () => {
     // The raw caller reaches the same connection.
     await session.callTool('get_info', {});
     expect(mocks.callTool).toHaveBeenLastCalledWith({ name: 'get_info', arguments: {} });
+    await session.callTool('get_info', {}, 120_000);
+    expect(mocks.callTool).toHaveBeenLastCalledWith({ name: 'get_info', arguments: {} }, undefined, { timeout: 120_000 });
     await session.close();
     expect(mocks.close).toHaveBeenCalledTimes(1);
   });

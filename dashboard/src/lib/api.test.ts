@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PrivateKeySigner } from '@contextvm/sdk';
-import { ApiError, PayApi, connect, probeService, toApiError, withTimeout } from './api';
+import { ApiError, LOOKUP_TIMEOUT_MS, PayApi, connect, probeService, toApiError, withTimeout } from './api';
 import { CTXVM_KIND, PowError } from '@deadhop/client';
-import { ADMIN_PUBKEY, PUBKEY, adminInvoice, audit, health, relayHistory, info, invoice, metrics, privacyAudit, proxyCheck, series, settingsView, stats, toolResult } from '../test-helpers';
+import { ADMIN_PUBKEY, PUBKEY, adminInvoice, audit, health, i2pLookup, relayHistory, info, invoice, metrics, privacyAudit, proxyCheck, series, settingsView, stats, toolResult } from '../test-helpers';
 
 const mocks = vi.hoisted(() => ({
   transports: [] as Array<{ options: Record<string, unknown> }>,
@@ -52,6 +52,7 @@ describe('PayApi', () => {
       get_privacy_audit: privacyAudit(),
       check_relays: { relays: [] },
       get_relay_history: relayHistory(),
+      resolve_i2p_name: i2pLookup(),
     };
     const caller = vi.fn(async (name: string) => toolResult(results[name]));
     const api = new PayApi(caller);
@@ -76,6 +77,7 @@ describe('PayApi', () => {
     expect(await api.checkRelays()).toEqual({ relays: [] });
     expect((await api.getRelayHistory()).window).toBe('1d');
     expect((await api.getRelayHistory('15m')).relays).toHaveLength(1);
+    expect(await api.resolveI2pName('nostr-not.i2p')).toEqual(i2pLookup());
     expect(caller.mock.calls).toEqual([
       ['get_health', {}],
       ['get_metrics', {}],
@@ -98,6 +100,8 @@ describe('PayApi', () => {
       ['check_relays', {}],
       ['get_relay_history', { window: '1h' }],
       ['get_relay_history', { window: '15m' }],
+      // A lookup may take a minute and a half: it waits longer than other calls.
+      ['resolve_i2p_name', { name: 'nostr-not.i2p' }, LOOKUP_TIMEOUT_MS],
     ]);
   });
 

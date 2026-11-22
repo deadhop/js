@@ -83,8 +83,11 @@ export function toApiError(e: unknown): ApiError {
   return new ApiError('network');
 }
 
-/** Performs one MCP `tools/call` and returns the raw result. */
-export type ToolCaller = (name: string, args: Record<string, unknown>) => Promise<unknown>;
+/**
+ * Performs one MCP `tools/call` and returns the raw result. `timeoutMs` is how
+ * long to wait for the answer (left out: the MCP default of 60 seconds).
+ */
+export type ToolCaller = (name: string, args: Record<string, unknown>, timeoutMs?: number) => Promise<unknown>;
 
 /** What to put on a new invoice. */
 export interface CreateInvoiceInput {
@@ -102,11 +105,12 @@ export class PayApi {
   /**
    * Call any tool and validate its answer with `schema`. The typed methods below
    * are built on this; it is public so operator tools can be added on top.
+   * `timeoutMs` is for the few tools that may take longer than a minute.
    */
-  async call<T>(name: string, args: Record<string, unknown>, schema: z.ZodType<T>): Promise<T> {
+  async call<T>(name: string, args: Record<string, unknown>, schema: z.ZodType<T>, timeoutMs?: number): Promise<T> {
     let raw: unknown;
     try {
-      raw = await this.callTool(name, args);
+      raw = await (timeoutMs === undefined ? this.callTool(name, args) : this.callTool(name, args, timeoutMs));
     } catch (e) {
       throw toApiError(e);
     }
@@ -188,7 +192,8 @@ export async function connect(signer: NostrSigner, config: ServiceConfig, option
   });
   const client = new Client({ name: options.clientName ?? 'deadhop-client', version: '0.1.0' });
   try {
-    const callTool: ToolCaller = (name, args) => client.callTool({ name, arguments: args });
+    const callTool: ToolCaller = (name, args, timeoutMs) =>
+      timeoutMs === undefined ? client.callTool({ name, arguments: args }) : client.callTool({ name, arguments: args }, undefined, { timeout: timeoutMs });
     const api = new PayApi(callTool);
     const info = await withTimeout(
       client.connect(transport).then(() => api.getInfo()),
