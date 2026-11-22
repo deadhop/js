@@ -68,8 +68,10 @@ export interface ProxyInput {
   id?: string;
   name?: string;
   url: string;
-  /** Key ids that may use it; empty or left out is every key. */
+  /** Key ids whose default route may use it; empty or left out is every key. */
   keys?: string[];
+  /** In the default route; left out is yes. */
+  pool?: boolean;
 }
 
 /** Changes to the proxy settings; `list` replaces the whole list. */

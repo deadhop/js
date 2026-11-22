@@ -66,7 +66,7 @@ let counter = 0;
 /** A proxy that is not saved yet. */
 export function newEntry(name: string, url: string): ProxyEntry {
   counter += 1;
-  return { id: `${NEW_PREFIX}${counter}`, name, url, keys: [] };
+  return { id: `${NEW_PREFIX}${counter}`, name, url, keys: [], pool: true };
 }
 
 /** `list` with the item at `from` moved to position `to`. */
@@ -107,20 +107,24 @@ export function shortDuration(secs: number): string {
   return `${Math.floor(secs / 60)}m ${secs % 60}s`;
 }
 
-const entryKey = (e: ProxyEntry) => `${e.id}\n${e.name}\n${e.url}\n${[...e.keys].sort().join(',')}`;
+const entryKey = (e: ProxyEntry) => `${e.id}\n${e.name}\n${e.url}\n${[...e.keys].sort().join(',')}\n${e.pool}`;
+
+/** The proxies in the default route (the pool), in list order. */
+export const poolOf = (p: ProxySettings) => p.list.filter((e) => e.pool);
 
 /** What differs from the live proxy settings, or the problem with the form. */
 export function proxiesPatch(live: ProxySettings, form: ProxySettings): ProxiesPatch | string {
   const patch: ProxiesPatch = {};
   if (form.list.map(entryKey).join('\u0000') !== live.list.map(entryKey).join('\u0000')) {
-    patch.list = form.list.map((e): ProxyInput => (isNew(e) ? { name: e.name, url: e.url, keys: e.keys } : { id: e.id, name: e.name, url: e.url, keys: e.keys }));
+    patch.list = form.list.map((e): ProxyInput => (isNew(e) ? { name: e.name, url: e.url, keys: e.keys, pool: e.pool } : { id: e.id, name: e.name, url: e.url, keys: e.keys, pool: e.pool }));
   }
+  if (JSON.stringify(form.rules) !== JSON.stringify(live.rules)) patch.rules = form.rules;
   if (form.mode !== live.mode) patch.mode = form.mode;
   if (form.offline !== live.offline) patch.offline = form.offline;
   if (form.transparent !== live.transparent) patch.transparent = form.transparent;
-  // With fewer than two proxies the strategy is hidden and not applied, so its
-  // intervals are neither checked nor sent.
-  if (form.list.length < 2) return patch;
+  // With fewer than two proxies in the default route the strategy is hidden
+  // and not applied, so its intervals are neither checked nor sent.
+  if (poolOf(form).length < 2) return patch;
   for (const k of ['rotate_secs', 'chaos_min_secs', 'chaos_max_secs'] as const) {
     const v = form[k];
     if (!Number.isInteger(v)) return 'Fill in every interval.';
