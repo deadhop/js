@@ -249,6 +249,35 @@ describe('Settings', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
+  it('shows each relay\'s last check, and tests them all again on request', async () => {
+    const check = (relay: string, over: Record<string, unknown>) => ({ relay, status: 'ok', connects: true, forwards: true, rate_limited: false, ms: 120, detail: '', checked_at: 1, ...over });
+    const relays = ['ws://127.0.0.1:7777', 'wss://b.example', 'wss://c.example'];
+    const before = health({
+      relay_health: [
+        check('ws://127.0.0.1:7777/', {}),
+        check('wss://b.example', { status: 'degraded', forwards: null, rate_limited: true, ms: null, detail: 'rate-limited' }),
+        check('wss://c.example', { status: 'down', connects: false, forwards: false, ms: null, detail: 'connection refused' }),
+      ],
+    });
+    const after = health({ relay_health: [check('ws://127.0.0.1:7777', { ms: 80 })] });
+    const getHealth = vi.fn().mockResolvedValueOnce(before).mockResolvedValue(after);
+    const checkRelays = vi.fn().mockResolvedValueOnce({ relays: [] }).mockRejectedValue(new Error('Too many requests. Wait a minute and try again.'));
+    setup(settingsView({ settings: settings({ relays }) }), { getHealth, checkRelays });
+    const line = (r: string) => screen.findByRole('status', { name: `${r}: last check` });
+    expect((await line(relays[0])).textContent).toContain('connects · carries events · 120 ms');
+    expect((await line(relays[1])).textContent).toContain('connects · rate-limiting us');
+    expect((await line(relays[1])).textContent).toContain('rate-limited');
+    expect((await line(relays[2])).textContent).toContain('does not connect · does not carry events');
+    expect((await line(relays[2])).textContent).toContain('connection refused');
+    await fireEvent.click(screen.getByRole('button', { name: 'Test relays' }));
+    await waitFor(() => expect(checkRelays).toHaveBeenCalledTimes(1));
+    expect((await line(relays[0])).textContent).toContain('80 ms');
+    expect(screen.queryByRole('status', { name: `${relays[2]}: last check` })).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Test relays' }));
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('Too many requests. Wait a minute and try again.'));
+    expect((screen.getByRole('button', { name: 'Test relays' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it('forgets a refused change when it is discarded', async () => {
     const proxies = { ...settings().proxies, list: [{ id: 'a', name: '', url: 'socks5://h:1', keys: [], pool: true }] };
     setup(settingsView({ settings: settings({ proxies }) }));
