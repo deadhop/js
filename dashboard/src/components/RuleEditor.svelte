@@ -3,6 +3,7 @@
   import type { KeyInfo, ProxyPool, ProxySettings, Rule, Settings } from '../lib/schemas';
   import KeyChips from './KeyChips.svelte';
   import { toggled } from '../lib/keys';
+  import { keyLabel } from '../lib/routeview';
 
   // One rule being made or changed. It only changes the form: nothing
   // reconnects until "Save changes".
@@ -45,6 +46,8 @@
   const others = $derived(form.proxies.rules.filter((_, i) => i !== index));
   const match = $derived(mode === 'pattern' ? patterns.split(/[\s,]+/).filter((p) => p !== '') : draft.match.filter((p) => p.includes('://')));
   const candidate = $derived<Rule>({ ...draft, match, fallback: typeof draft.to === 'object' ? draft.fallback : 'offline' });
+  /** Every place the rule can take, the last one just before the default route. */
+  const positions = $derived([...others.map((_, i) => ({ value: i, label: String(i + 1) })), { value: others.length, label: `${others.length + 1}, last before the default route` }]);
   const nextRules = $derived([...others.slice(0, position), candidate, ...others.slice(position)]);
   const next = $derived({ ...form, proxies: { ...form.proxies, rules: nextRules } });
 
@@ -92,7 +95,7 @@
 <section class="card rule-editor" aria-labelledby="rule-editor-title">
   <h3 id="rule-editor-title">{index === null ? 'New rule' : `Rule ${index + 1}`}</h3>
   <p class="hint">
-    Relays matching {match.length === 0 ? '…' : match.join(', ')}, for {candidate.keys.length === 0 ? 'all keys' : candidate.keys.map((k) => keys.find((x) => x.id === k)?.label ?? k).join(', ')}, go to {destination(candidate.to, form.proxies.list).toLowerCase()}.
+    Relays matching {match.length === 0 ? '…' : match.join(', ')}, for {candidate.keys.length === 0 ? 'all keys' : candidate.keys.map((k) => keyLabel(keys, k)).join(', ')}, go to {destination(candidate.to, form.proxies.list).toLowerCase()}.
   </p>
 
   <div class="rule-grid">
@@ -147,9 +150,9 @@
 
       <div class="rule-step">
         <label for="rule-position" class="field-title">Place in the order</label>
-        <select id="rule-position" bind:value={position}>
-          {#each Array.from({ length: others.length + 1 }, (_, i) => i) as i (i)}
-            <option value={i}>{i === others.length ? `${i + 1}, last before the default route` : `${i + 1}`}</option>
+        <select id="rule-position" onchange={(e) => (position = e.currentTarget.selectedIndex)}>
+          {#each positions as p (p.value)}
+            <option selected={p.value === position}>{p.label}</option>
           {/each}
         </select>
         <label for="rule-name" class="field-title">Name (optional)</label>

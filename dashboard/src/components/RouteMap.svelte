@@ -14,18 +14,18 @@
     keys: KeyInfo[];
     /** The saved settings (the routes are the service's, made from these). */
     live: Settings;
-    /** What the service reports; null until it has answered. */
-    pool: ProxyPool | null;
+    /** What the service reports. */
+    pool: ProxyPool;
   } = $props();
 
   let lane = $state<string | null>(null);
   let tryUrl = $state('');
 
-  const rows = $derived(pool === null ? [] : mapRows(pool.routes, lane));
-  const top = $derived(pool === null ? [] : tiles(pool.routes, live, pool));
-  const summaries = $derived(pool === null ? [] : proxySummaries(pool.routes, live, pool));
-  const fellBack = $derived(pool === null ? [] : [...new Set(pool.routes.filter((r) => r.reason === 'fallback').map((r) => r.relay))]);
-  const dark = $derived(pool === null ? [] : [...new Set(pool.routes.filter((r) => r.via === 'off' && r.reason !== 'blocked').map((r) => r.relay))]);
+  const rows = $derived(mapRows(pool.routes, lane));
+  const top = $derived(tiles(pool.routes, live, pool));
+  const summaries = $derived(proxySummaries(pool.routes, live, pool));
+  const fellBack = $derived([...new Set(pool.routes.filter((r) => r.reason === 'fallback').map((r) => r.relay))]);
+  const dark = $derived([...new Set(pool.routes.filter((r) => r.via === 'off' && r.reason !== 'blocked').map((r) => r.relay))]);
 
   const proxyOf = (id: string | null) => live.proxies.list.find((e) => e.id === id);
   const color = (id: string | null) => {
@@ -50,10 +50,7 @@
   });
 </script>
 
-{#if pool === null}
-  <p class="muted" role="status">Reading the routes from the service…</p>
-{:else}
-  <div class="route-map">
+<div class="route-map">
     <div class="map-tools">
       <div class="field">
         <span class="field-title" id="lane-title">Show the routes of</span>
@@ -139,4 +136,3 @@
       </div>
     {/if}
   </div>
-{/if}
