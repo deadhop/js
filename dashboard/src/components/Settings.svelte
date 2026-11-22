@@ -14,6 +14,7 @@
     onChanged,
     confirm = (message: string) => window.confirm(message),
     showSweep = false,
+    section = 'general',
   }: {
     api: PayApi;
     /** Relays this page itself uses (from config.json). */
@@ -22,11 +23,14 @@
     confirm?: (message: string) => boolean;
     /** The PayJoin / CoinJoin sweep card; off until the sweep is implemented. */
     showSweep?: boolean;
+    /** Which cards to show: relays and proxies (the Network tab), or everything else. */
+    section?: 'general' | 'network';
   } = $props();
 
   // A day of relay results, for the error rate beside each relay; optional here.
   let history = $state<RelayHistory | null>(null);
   $effect(() => {
+    if (section !== 'network') return;
     api.getRelayHistory('1d').then(
       (h) => (history = h),
       () => (history = null),
@@ -44,6 +48,7 @@
     );
   // Read when the page opens, and again every so often: the service probes its proxies on its own.
   $effect(() => {
+    if (section !== 'network') return;
     void loadHealth();
     const timer = setInterval(() => void loadHealth(), HEALTH_EVERY_MS);
     return () => clearInterval(timer);
@@ -214,12 +219,23 @@
 
 <header class="page-head">
   <div>
-    <p class="eyebrow">Settings</p>
-    <h1>How the service behaves</h1>
-    <p class="muted">Changes are saved as overrides on top of the host's environment. Every change is a signed, one-time request and goes into the audit log.</p>
+    {#if section === 'network'}
+      <p class="eyebrow">Network</p>
+      <h1>How the service is reached</h1>
+      <p class="muted">The relays each key listens on, and the proxies between them and this machine. Saving reconnects; if nothing connects, the previous setup comes back.</p>
+    {:else}
+      <p class="eyebrow">Settings</p>
+      <h1>How the service behaves</h1>
+      <p class="muted">Changes are saved as overrides on top of the host's environment. Every change is a signed, one-time request and goes into the audit log.</p>
+    {/if}
   </div>
   {#if view}
-    <button type="button" onclick={reset} disabled={busy || view.overridden.length === 0}>Reset to environment</button>
+    <div class="page-actions">
+      {#if view.overridden.length > 0}<span class="badge detected">{`${view.overridden.length} overridden`}</span>{/if}
+      {#if section === 'general'}
+        <button type="button" onclick={reset} disabled={busy || view.overridden.length === 0}>Reset to environment</button>
+      {/if}
+    </div>
   {/if}
 </header>
 
@@ -237,189 +253,191 @@
       void save();
     }}
   >
-    <section class="card" aria-labelledby="s-conn">
-      <div class="card-head">
-        <h2 id="s-conn">Relays</h2>
-        {#if view.overridden.length > 0}<span class="badge detected">{`${view.overridden.length} overridden`}</span>{/if}
-      </div>
-      <ul class="plain key-explain" aria-label="Keys">
-        {#each keys as k (k.id)}
-          <li>
-            <strong>{k.label}</strong>
-            <span class="muted">{k.operators_only ? 'Operators sign in here to manage the service. Nobody else is answered.' : 'Customers and apps create and look up invoices here.'}</span>
-            <span class="count">{`${plural(relaysOf(form.relays, form.relay_keys, k.id, ids).length, 'relay')} · ${form.proxies.list.length === 0 ? 'no proxies' : plural(proxiesOf(form.proxies, k.id, ids).length, 'proxy', 'proxies')}`}</span>
-          </li>
-        {/each}
-      </ul>
-      <div class="field">
-        <span class="field-title">Relays</span>
-        <ul class="plain relay-edit">
-          {#each form.relays as r (r)}
-            {@const st = statsFor(history, r)}
+    {#if section === 'network'}
+      <section class="card" aria-labelledby="s-conn">
+        <div class="card-head">
+          <h2 id="s-conn">Relays</h2>
+        </div>
+        <ul class="plain key-explain" aria-label="Keys">
+          {#each keys as k (k.id)}
             <li>
-              <code class="relay-url mono">{r}</code>
-              {#if st}
-                {@const rate = errorRate(st)}
-                <span class={`rate-chip ${rate.tone}`} title="Failed health checks and replies, last 24 hours">{`${rate.text} errors · 24 h`}</span>
-              {/if}
-              <KeyChips
-                {keys}
-                assigned={relayUsers(form.relay_keys, r, ids)}
-                required={dependents(form.relays, form.relay_keys, r, ids, dashboardRelays)}
-                requiredWhy="its only relay, or the only one this page connects through, so it stays on."
-                label={r}
-                onchange={(id, on) => useRelay(r, id, on)}
-              />
-              <button type="button" class="sm remove" onclick={() => removeRelay(r)} disabled={form.relays.length === 1} aria-label={`Remove ${r}`}>Remove</button>
+              <strong>{k.label}</strong>
+              <span class="muted">{k.operators_only ? 'Operators sign in here to manage the service. Nobody else is answered.' : 'Customers and apps create and look up invoices here.'}</span>
+              <span class="count">{`${plural(relaysOf(form.relays, form.relay_keys, k.id, ids).length, 'relay')} · ${form.proxies.list.length === 0 ? 'no proxies' : plural(proxiesOf(form.proxies, k.id, ids).length, 'proxy', 'proxies')}`}</span>
             </li>
           {/each}
         </ul>
-        <div class="add-relay">
-          <label class="visually-hidden" for="relay">Add relay</label>
-          <input id="relay" class="mono" placeholder="wss://relay.example.com" bind:value={newRelay} />
-          <button type="button" onclick={addRelay} disabled={form.relays.length >= 8}>Add</button>
-        </div>
-        <p class="hint">
-          On mainnet only <span class="mono">wss://</span> relays, unless the relay is on this machine. Saving reconnects: if no relay connects, the previous
-          list comes back. If none stays connected for 10 minutes later on, the service goes back to <span class="mono">DEADHOP_RELAYS</span> by itself.
-        </p>
-        {#if unreachable}
-          <p class="error" role="alert">
-            {`This page signs in through the administration key, over ${dashboardRelays.join(', ')}. Keep one of them for that key, or update config.json before saving.`}
+        <div class="field">
+          <span class="field-title">Relays</span>
+          <ul class="plain relay-edit">
+            {#each form.relays as r (r)}
+              {@const st = statsFor(history, r)}
+              <li>
+                <code class="relay-url mono">{r}</code>
+                {#if st}
+                  {@const rate = errorRate(st)}
+                  <span class={`rate-chip ${rate.tone}`} title="Failed health checks and replies, last 24 hours">{`${rate.text} errors · 24 h`}</span>
+                {/if}
+                <KeyChips
+                  {keys}
+                  assigned={relayUsers(form.relay_keys, r, ids)}
+                  required={dependents(form.relays, form.relay_keys, r, ids, dashboardRelays)}
+                  requiredWhy="its only relay, or the only one this page connects through, so it stays on."
+                  label={r}
+                  onchange={(id, on) => useRelay(r, id, on)}
+                />
+                <button type="button" class="sm remove" onclick={() => removeRelay(r)} disabled={form.relays.length === 1} aria-label={`Remove ${r}`}>Remove</button>
+              </li>
+            {/each}
+          </ul>
+          <div class="add-relay">
+            <label class="visually-hidden" for="relay">Add relay</label>
+            <input id="relay" class="mono" placeholder="wss://relay.example.com" bind:value={newRelay} />
+            <button type="button" onclick={addRelay} disabled={form.relays.length >= 8}>Add</button>
+          </div>
+          <p class="hint">
+            On mainnet only <span class="mono">wss://</span> relays, unless the relay is on this machine. Saving reconnects: if no relay connects, the previous
+            list comes back. If none stays connected for 10 minutes later on, the service goes back to <span class="mono">DEADHOP_RELAYS</span> by itself.
           </p>
-        {/if}
-      </div>
+          {#if unreachable}
+            <p class="error" role="alert">
+              {`This page signs in through the administration key, over ${dashboardRelays.join(', ')}. Keep one of them for that key, or update config.json before saving.`}
+            </p>
+          {/if}
+        </div>
 
-    </section>
+      </section>
 
-    <ProxyPool {api} {keys} proxies={form.proxies} live={view.settings.proxies} pool={health?.proxy_pool ?? null} locked={view.fixed.proxy_locked} />
+      <ProxyPool {api} {keys} proxies={form.proxies} live={view.settings.proxies} pool={health?.proxy_pool ?? null} locked={view.fixed.proxy_locked} />
+    {:else}
 
-    <section class="card" aria-labelledby="s-abuse">
-      <h2 id="s-abuse">Abuse protection</h2>
-      <div class="grid2">
-        <div class="field">
-          <label for="pow">Proof of work (bits){@render mark('pow_bits')}</label>
-          <input id="pow" type="number" min="0" max="64" bind:value={form.pow_bits} />
-          <p class="hint">Each extra bit doubles the cost for customers and attackers alike. 20 bits is about a second in a browser.</p>
-        </div>
-        <div class="field">
-          <label for="window">Request age limit (s){@render mark('pow_window_secs')}</label>
-          <input id="window" type="number" min="30" max="3600" bind:value={form.pow_window_secs} />
-        </div>
-        <div class="field">
-          <label for="rate-global">Public invoices / min{@render mark('rate_global_per_min')}</label>
-          <input id="rate-global" type="number" min="1" bind:value={form.rate_global_per_min} />
-        </div>
-        <div class="field">
-          <label for="rate-key">Public invoices / min / key{@render mark('rate_per_key_per_min')}</label>
-          <input id="rate-key" type="number" min="1" bind:value={form.rate_per_key_per_min} />
-        </div>
-        <div class="field">
-          <label for="req-global">Public requests / min{@render mark('rate_requests_per_min')}</label>
-          <input id="req-global" type="number" min="1" bind:value={form.rate_requests_per_min} />
-        </div>
-        <div class="field">
-          <label for="req-key">Public requests / min / key{@render mark('rate_requests_per_key_per_min')}</label>
-          <input id="req-key" type="number" min="1" bind:value={form.rate_requests_per_key_per_min} />
-        </div>
-      </div>
-      <label class="check"><input id="public" type="checkbox" bind:checked={form.public_invoicing} /> Public invoicing{@render mark('public_invoicing')}</label>
-    </section>
-
-    <section class="card" aria-labelledby="s-invoices">
-      <h2 id="s-invoices">Invoices and payments</h2>
-      <div class="grid2">
-        <div class="field"><label for="name">Name{@render mark('name')}</label><input id="name" bind:value={form.name} maxlength="60" /></div>
-        <div class="field">
-          <label for="confs">Confirmations{@render mark('min_confirmations')}</label>
-          <input id="confs" type="number" min="1" max="144" bind:value={form.min_confirmations} />
-          <p class="hint">Raise it for larger amounts: a one-block reorg is not noticed at 1.</p>
-        </div>
-        <div class="field">
-          <label for="min-amount">Smallest invoice (sats){@render mark('min_amount_sat')}</label>
-          <input id="min-amount" type="number" min="1" bind:value={form.min_amount_sat} />
-        </div>
-        <div class="field">
-          <label for="max-amount">Largest invoice (sats){@render mark('max_amount_sat')}</label>
-          <input id="max-amount" type="number" min="1" bind:value={form.max_amount_sat} />
-        </div>
-        <div class="field">
-          <label for="default-expiry">Default lifetime (s){@render mark('default_expiry_secs')}</label>
-          <input id="default-expiry" type="number" min="60" bind:value={form.default_expiry_secs} />
-        </div>
-        <div class="field">
-          <label for="max-expiry">Longest lifetime (s){@render mark('max_expiry_secs')}</label>
-          <input id="max-expiry" type="number" min="60" bind:value={form.max_expiry_secs} />
-        </div>
-        <div class="field">
-          <label for="open">Open invoices cap{@render mark('max_open_invoices')}</label>
-          <input id="open" type="number" min="1" bind:value={form.max_open_invoices} />
-        </div>
-        <div class="field">
-          <label for="daily">Invoices per day cap{@render mark('max_invoices_per_day')}</label>
-          <input id="daily" type="number" min="1" bind:value={form.max_invoices_per_day} />
-          <p class="hint">Bounds how many addresses the public can use up.</p>
-        </div>
-        <div class="field">
-          <label for="poll">Chain poll interval (s){@render mark('poll_secs')}</label>
-          <input id="poll" type="number" min="1" max="3600" bind:value={form.poll_secs} />
-        </div>
-        <div class="field">
-          <label for="grace">Late payment grace (s){@render mark('late_grace_secs')}</label>
-          <input id="grace" type="number" min="0" bind:value={form.late_grace_secs} />
-        </div>
-      </div>
-    </section>
-
-    <!-- The sweep is not implemented yet: hidden until it is (its settings still round-trip). -->
-    {#if showSweep}
-      <section class="card" aria-labelledby="s-sweep">
-        <h2 id="s-sweep">PayJoin / CoinJoin sweep</h2>
-        <p class="hint">
-          The policy for moving funds out once they pile up. This service holds no spending keys and never sends anything: a separate signer reads the policy
-          and chooses the destination itself.
-        </p>
+      <section class="card" aria-labelledby="s-abuse">
+        <h2 id="s-abuse">Abuse protection</h2>
         <div class="grid2">
           <div class="field">
-            <label for="sweep-mode">Method</label>
-            <select id="sweep-mode" bind:value={form.sweep.mode}>
-              <option value="payjoin">PayJoin</option>
-              <option value="coinjoin">CoinJoin</option>
-            </select>
+            <label for="pow">Proof of work (bits){@render mark('pow_bits')}</label>
+            <input id="pow" type="number" min="0" max="64" bind:value={form.pow_bits} />
+            <p class="hint">Each extra bit doubles the cost for customers and attackers alike. 20 bits is about a second in a browser.</p>
           </div>
           <div class="field">
-            <label for="sweep-threshold">Threshold (sats)</label>
-            <input id="sweep-threshold" type="number" min="10000" bind:value={form.sweep.threshold_sat} />
+            <label for="window">Request age limit (s){@render mark('pow_window_secs')}</label>
+            <input id="window" type="number" min="30" max="3600" bind:value={form.pow_window_secs} />
           </div>
           <div class="field">
-            <label for="sweep-fee">Highest fee rate (sat/vB)</label>
-            <input id="sweep-fee" type="number" min="1" max="1000" bind:value={form.sweep.max_fee_rate_sat_vb} />
+            <label for="rate-global">Public invoices / min{@render mark('rate_global_per_min')}</label>
+            <input id="rate-global" type="number" min="1" bind:value={form.rate_global_per_min} />
           </div>
           <div class="field">
-            <label for="sweep-anon">Smallest CoinJoin anonymity set</label>
-            <input id="sweep-anon" type="number" min="2" max="1000" bind:value={form.sweep.min_anonymity_set} />
+            <label for="rate-key">Public invoices / min / key{@render mark('rate_per_key_per_min')}</label>
+            <input id="rate-key" type="number" min="1" bind:value={form.rate_per_key_per_min} />
+          </div>
+          <div class="field">
+            <label for="req-global">Public requests / min{@render mark('rate_requests_per_min')}</label>
+            <input id="req-global" type="number" min="1" bind:value={form.rate_requests_per_min} />
+          </div>
+          <div class="field">
+            <label for="req-key">Public requests / min / key{@render mark('rate_requests_per_key_per_min')}</label>
+            <input id="req-key" type="number" min="1" bind:value={form.rate_requests_per_key_per_min} />
           </div>
         </div>
-        <label class="check"><input id="sweep-on" type="checkbox" bind:checked={form.sweep.enabled} /> Enabled</label>
+        <label class="check"><input id="public" type="checkbox" bind:checked={form.public_invoicing} /> Public invoicing{@render mark('public_invoicing')}</label>
+      </section>
+
+      <section class="card" aria-labelledby="s-invoices">
+        <h2 id="s-invoices">Invoices and payments</h2>
+        <div class="grid2">
+          <div class="field"><label for="name">Name{@render mark('name')}</label><input id="name" bind:value={form.name} maxlength="60" /></div>
+          <div class="field">
+            <label for="confs">Confirmations{@render mark('min_confirmations')}</label>
+            <input id="confs" type="number" min="1" max="144" bind:value={form.min_confirmations} />
+            <p class="hint">Raise it for larger amounts: a one-block reorg is not noticed at 1.</p>
+          </div>
+          <div class="field">
+            <label for="min-amount">Smallest invoice (sats){@render mark('min_amount_sat')}</label>
+            <input id="min-amount" type="number" min="1" bind:value={form.min_amount_sat} />
+          </div>
+          <div class="field">
+            <label for="max-amount">Largest invoice (sats){@render mark('max_amount_sat')}</label>
+            <input id="max-amount" type="number" min="1" bind:value={form.max_amount_sat} />
+          </div>
+          <div class="field">
+            <label for="default-expiry">Default lifetime (s){@render mark('default_expiry_secs')}</label>
+            <input id="default-expiry" type="number" min="60" bind:value={form.default_expiry_secs} />
+          </div>
+          <div class="field">
+            <label for="max-expiry">Longest lifetime (s){@render mark('max_expiry_secs')}</label>
+            <input id="max-expiry" type="number" min="60" bind:value={form.max_expiry_secs} />
+          </div>
+          <div class="field">
+            <label for="open">Open invoices cap{@render mark('max_open_invoices')}</label>
+            <input id="open" type="number" min="1" bind:value={form.max_open_invoices} />
+          </div>
+          <div class="field">
+            <label for="daily">Invoices per day cap{@render mark('max_invoices_per_day')}</label>
+            <input id="daily" type="number" min="1" bind:value={form.max_invoices_per_day} />
+            <p class="hint">Bounds how many addresses the public can use up.</p>
+          </div>
+          <div class="field">
+            <label for="poll">Chain poll interval (s){@render mark('poll_secs')}</label>
+            <input id="poll" type="number" min="1" max="3600" bind:value={form.poll_secs} />
+          </div>
+          <div class="field">
+            <label for="grace">Late payment grace (s){@render mark('late_grace_secs')}</label>
+            <input id="grace" type="number" min="0" bind:value={form.late_grace_secs} />
+          </div>
+        </div>
+      </section>
+
+      <!-- The sweep is not implemented yet: hidden until it is (its settings still round-trip). -->
+      {#if showSweep}
+        <section class="card" aria-labelledby="s-sweep">
+          <h2 id="s-sweep">PayJoin / CoinJoin sweep</h2>
+          <p class="hint">
+            The policy for moving funds out once they pile up. This service holds no spending keys and never sends anything: a separate signer reads the policy
+            and chooses the destination itself.
+          </p>
+          <div class="grid2">
+            <div class="field">
+              <label for="sweep-mode">Method</label>
+              <select id="sweep-mode" bind:value={form.sweep.mode}>
+                <option value="payjoin">PayJoin</option>
+                <option value="coinjoin">CoinJoin</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="sweep-threshold">Threshold (sats)</label>
+              <input id="sweep-threshold" type="number" min="10000" bind:value={form.sweep.threshold_sat} />
+            </div>
+            <div class="field">
+              <label for="sweep-fee">Highest fee rate (sat/vB)</label>
+              <input id="sweep-fee" type="number" min="1" max="1000" bind:value={form.sweep.max_fee_rate_sat_vb} />
+            </div>
+            <div class="field">
+              <label for="sweep-anon">Smallest CoinJoin anonymity set</label>
+              <input id="sweep-anon" type="number" min="2" max="1000" bind:value={form.sweep.min_anonymity_set} />
+            </div>
+          </div>
+          <label class="check"><input id="sweep-on" type="checkbox" bind:checked={form.sweep.enabled} /> Enabled</label>
+        </section>
+      {/if}
+
+      <section class="card host-only" aria-labelledby="s-host">
+        <div class="card-head">
+          <h2 id="s-host">Fixed on the host</h2>
+          <span class="badge expired">host-only</span>
+        </div>
+        <p class="hint">Nothing that decides where money goes can be changed from here: the wallet key, network, Electrum server and data directory are set on the host.</p>
+        <dl class="grid2 fixed">
+          <div class="field"><dt>Network</dt><dd class="field-box">{view.fixed.network}</dd></div>
+          <div class="field">
+            <dt>Electrum server</dt>
+            <dd class="field-box"><code>{view.fixed.electrum}</code> <span class="muted">{view.fixed.electrum_transport}</span></dd>
+          </div>
+          <div class="field"><dt>First receive address</dt><dd class="field-box"><code>{view.fixed.first_address}</code></dd></div>
+          <div class="field"><dt>Discovery announcements</dt><dd class="field-box">{view.fixed.announce ? 'on' : 'off'}</dd></div>
+        </dl>
       </section>
     {/if}
-
-    <section class="card host-only" aria-labelledby="s-host">
-      <div class="card-head">
-        <h2 id="s-host">Fixed on the host</h2>
-        <span class="badge expired">host-only</span>
-      </div>
-      <p class="hint">Nothing that decides where money goes can be changed from here: the wallet key, network, Electrum server and data directory are set on the host.</p>
-      <dl class="grid2 fixed">
-        <div class="field"><dt>Network</dt><dd class="field-box">{view.fixed.network}</dd></div>
-        <div class="field">
-          <dt>Electrum server</dt>
-          <dd class="field-box"><code>{view.fixed.electrum}</code> <span class="muted">{view.fixed.electrum_transport}</span></dd>
-        </div>
-        <div class="field"><dt>First receive address</dt><dd class="field-box"><code>{view.fixed.first_address}</code></dd></div>
-        <div class="field"><dt>Discovery announcements</dt><dd class="field-box">{view.fixed.announce ? 'on' : 'off'}</dd></div>
-      </dl>
-    </section>
 
     <div class="save-bar">
       <div class="save-inner">

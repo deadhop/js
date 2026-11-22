@@ -38,8 +38,14 @@ describe('Admin', () => {
     expect(screen.getByRole('button', { name: 'Invoices' }).getAttribute('aria-current')).toBe('page');
     expect(screen.getByRole('button', { name: 'Overview' }).getAttribute('aria-current')).toBeNull();
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Network' }));
     await screen.findByRole('heading', { name: 'Relays' });
+    expect(screen.getByRole('heading', { name: 'Proxies' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Network' }).getAttribute('aria-current')).toBe('page');
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    await screen.findByRole('heading', { name: 'Abuse protection' });
+    expect(screen.queryByRole('heading', { name: 'Proxies' })).toBeNull();
 
     await fireEvent.click(screen.getByRole('button', { name: 'Operators' }));
     await screen.findByRole('heading', { name: 'Audit log' });
