@@ -2,7 +2,27 @@
   import type { PayApi } from '../lib/api';
   import { formatDuration } from '../lib/format';
   import { keyTag, toggled } from '../lib/keys';
-  import { MAX_PROXIES, buildProxy, editedUrl, isNew, move, newEntry, parseProxy, poolOf, shortDuration, type ProxyFields } from '../lib/proxy';
+  import {
+    I2P_PORT,
+    MAX_PROXIES,
+    MAX_REGISTRIES,
+    buildProxy,
+    editedUrl,
+    i2pProxy,
+    i2pRule,
+    i2pRuleIndex,
+    isNew,
+    move,
+    newEntry,
+    parseProxy,
+    poolOf,
+    registryProblem,
+    shortDuration,
+    type ProxyFields,
+    type ProxyKind,
+  } from '../lib/proxy';
+  import { registryHost } from '../lib/relays';
+  import { destination, proxyName } from '../lib/routes';
   import type { KeyInfo, OfflinePolicy, ProxyCheck, ProxyMode, ProxyPool, ProxySettings } from '../lib/schemas';
   import Duration from './Duration.svelte';
   import KeyChips from './KeyChips.svelte';
@@ -98,7 +118,7 @@
 
   function edit(i: number) {
     const e = proxies.list[i];
-    draft = { index: i, name: e.name, fields: parseProxy(e.url) };
+    draft = { index: i, name: e.name, fields: parseProxy(e.url, e.i2p === true) };
     draftError = '';
   }
 
@@ -114,9 +134,42 @@
       return;
     }
     const name = d.name.trim();
-    if (d.index === null) proxies.list = [...proxies.list, newEntry(name, built.url)];
-    else proxies.list = proxies.list.map((e, i) => (i === d.index ? { ...e, name, url: built.url } : e));
+    const i2p = d.fields.kind === 'i2p';
+    if (d.index === null) proxies.list = [...proxies.list, newEntry(name, built.url, i2p)];
+    else proxies.list = proxies.list.map((e, i) => (i === d.index ? { ...e, name, url: built.url, i2p } : e));
     draft = null;
+  }
+
+  /** Another proxy is already the I2P router: only one can be. */
+  const otherI2p = $derived(draft !== null && proxies.list.some((e, i) => e.i2p === true && i !== draft!.index));
+
+  /** Picking the I2P router fills in its usual port. */
+  function pickKind(kind: ProxyKind) {
+    const f = draft!.fields;
+    f.kind = kind;
+    if (kind === 'i2p' && (f.port === '' || f.port === '9050')) f.port = I2P_PORT;
+  }
+
+  // ---- I2P names ----
+  const router = $derived(i2pProxy(proxies));
+  const i2pRuleAt = $derived(i2pRuleIndex(proxies.rules));
+  let newRegistry = $state('');
+  let registryError = $state('');
+
+  function addRegistry() {
+    const t = newRegistry.trim();
+    registryError = registryProblem(t, proxies.i2p_registries);
+    if (registryError !== '') return;
+    proxies.i2p_registries = [...proxies.i2p_registries, t];
+    newRegistry = '';
+  }
+
+  function removeRegistry(r: string) {
+    proxies.i2p_registries = proxies.i2p_registries.filter((x) => x !== r);
+  }
+
+  function routeI2p(id: string) {
+    proxies.rules = [...proxies.rules, i2pRule(id)];
   }
 
   function remove(i: number) {
@@ -239,7 +292,7 @@
             {/if}
             <span class="pos mono" aria-hidden="true">{i + 1}</span>
             <span class="proxy-id">
-              <span class="proxy-name">{entry.name === '' ? 'Unnamed proxy' : entry.name}</span>
+              <span class="proxy-name">{entry.name === '' ? 'Unnamed proxy' : entry.name}{#if entry.i2p}<span class="badge i2p-badge">I2P router</span>{/if}</span>
               <code class="mono">{entry.url}</code>
             </span>
             <span class="proxy-state">
@@ -285,11 +338,17 @@
             <div class="field"><label for="proxy-label">Label (optional)</label><input id="proxy-label" bind:value={draft.name} maxlength="60" placeholder="Tor" /></div>
             <div class="field">
               <label for="proxy-kind">Type</label>
-              <select id="proxy-kind" bind:value={draft.fields.kind}>
+              <select id="proxy-kind" bind:value={() => draft!.fields.kind, pickKind}>
                 <option value="socks5">SOCKS5 (Tor, VPN)</option>
                 <option value="https">HTTPS proxy</option>
                 <option value="http">HTTP proxy</option>
+                <option value="i2p" disabled={otherI2p}>I2P router</option>
               </select>
+              {#if otherI2p}
+                <p class="hint">An I2P router is already listed. Only one can be.</p>
+              {:else if draft.fields.kind === 'i2p'}
+                <p class="hint">Your I2P router's HTTP proxy, usually port 4444. I2P names are looked up through it. It starts outside the default route.</p>
+              {/if}
             </div>
             <div class="field"><label for="proxy-host">Host</label><input id="proxy-host" class="mono" bind:value={draft.fields.host} placeholder="127.0.0.1" /></div>
             <div class="field"><label for="proxy-port">Port</label><input id="proxy-port" class="mono" bind:value={draft.fields.port} inputmode="numeric" placeholder="9050" /></div>
@@ -309,6 +368,53 @@
         <div class="test-row">
           <button type="button" onclick={create} disabled={full}>Create proxy</button>
           {#if full}<span class="hint inline">Eight proxies is the most.</span>{/if}
+        </div>
+      {/if}
+
+      {#if router}
+        <div class="i2p-names" role="group" aria-labelledby="i2p-title">
+          <span class="field-title" id="i2p-title">I2P names</span>
+          <p class="hint">
+            {`When you add a relay by its .i2p name, the name is looked up once through ${proxyName(router)}, by asking these registries. The relay is saved under the .b32.i2p address it gets, so your router does not need to know the name.`}
+          </p>
+          <ul class="plain registry-list" aria-label="I2P name registries">
+            {#each proxies.i2p_registries as r (r)}
+              <li>
+                <code class="mono">{r}</code>
+                <button type="button" class="sm remove" aria-label={`Remove registry ${registryHost(r)}`} onclick={() => removeRegistry(r)}>Remove</button>
+              </li>
+            {:else}
+              <li class="muted">No registries: names cannot be looked up.</li>
+            {/each}
+          </ul>
+          {#if proxies.i2p_registries.length < MAX_REGISTRIES}
+            <div class="add-relay">
+              <label class="visually-hidden" for="registry">Add registry</label>
+              <input
+                id="registry"
+                class="mono"
+                placeholder="http://registry.i2p/jump?q={'{name}'}"
+                aria-invalid={registryError !== ''}
+                aria-describedby={registryError !== '' ? 'registry-error' : undefined}
+                bind:value={newRegistry}
+                oninput={() => (registryError = '')}
+              />
+              <button type="button" onclick={addRegistry}>Add</button>
+            </div>
+          {:else}
+            <p class="hint">Four registries is the most.</p>
+          {/if}
+          {#if registryError !== ''}<p id="registry-error" class="field-error" role="alert">{registryError}</p>{/if}
+          {#if i2pRuleAt >= 0}
+            <p class="hint">{`Rule ${i2pRuleAt + 1} decides where .i2p relays go: ${destination(proxies.rules[i2pRuleAt].to, proxies.list).toLowerCase()}.`}</p>
+          {:else if isNew(router)}
+            <p class="hint">Save this proxy first. Then it can carry your .i2p relays.</p>
+          {:else}
+            <div class="test-row">
+              <button type="button" onclick={() => routeI2p(router!.id)} disabled={proxies.rules.length >= 16}>Send .i2p relays through this proxy</button>
+              <span class="hint inline">Adds a rule. Until then .i2p relays take the default route.</span>
+            </div>
+          {/if}
         </div>
       {/if}
 

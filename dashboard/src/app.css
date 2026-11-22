@@ -247,6 +247,10 @@ button.sm.icon {
 button.sm.remove {
   color: var(--bad);
 }
+button.sm.primary {
+  color: var(--primary-text);
+  font-weight: 600;
+}
 button.sm.remove:hover:not(:disabled) {
   border-color: var(--bad);
 }
@@ -2796,4 +2800,67 @@ dialog.replace-relay h2 {
   .rule-row .rule-actions {
     justify-content: flex-start;
   }
+}
+
+/* The I2P router proxy and the registries its names are looked up in. */
+.i2p-badge {
+  margin-left: 0.5rem;
+  vertical-align: 1px;
+}
+.i2p-names {
+  display: grid;
+  gap: 0.5rem;
+  border: 1.5px solid var(--line);
+  border-radius: 4px;
+  padding: 0.75rem;
+}
+.i2p-names .hint {
+  margin: 0;
+}
+.registry-list {
+  display: grid;
+  gap: 0.25rem;
+}
+.registry-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.registry-list code {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+/* A named relay: the name, its address under it, on a line of their own. */
+.relay-edit .relay-named {
+  display: grid;
+  flex: 1 0 100%;
+  font-size: 0.875rem;
+}
+.relay-edit .relay-named code {
+  font-size: 0.75rem;
+  color: var(--soft);
+  overflow-wrap: anywhere;
+}
+.i2p-found {
+  flex: 1 0 100%;
+  display: grid;
+  gap: 0.4rem;
+  margin: 0.5rem 0 0;
+  padding: 0.6rem 0.75rem;
+  border: 1.5px solid var(--line);
+  border-radius: 4px;
+  font-size: 0.8125rem;
+}
+.i2p-found p {
+  margin: 0;
+}
+.i2p-line .mono {
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+.i2p-warning {
+  color: var(--bad);
+  font-weight: 600;
 }

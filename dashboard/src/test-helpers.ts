@@ -1,10 +1,19 @@
 // Fixtures shared by the unit tests.
-import type { AdminInvoice, AuditLog, Health, Info, KeyInfo, Invoice, Metrics, PrivacyAudit, ProxyCheck, ProxyPool, RelayHistory, RelayStats, Series, Settings, SettingsView, Stats } from './lib/schemas';
+import type { AdminInvoice, I2pLookup, AuditLog, Health, Info, KeyInfo, Invoice, Metrics, PrivacyAudit, ProxyCheck, ProxyPool, RelayHistory, RelayStats, Series, Settings, SettingsView, Stats } from './lib/schemas';
 
 export const ADDRESS = 'bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080';
 export const PUBKEY = '79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798';
 export const ADMIN_PUBKEY = 'c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5';
 export const SERVICE_PUBKEY = '5b9b8ef38c43187d1daa80cc14d0c0f0107d480a3be7b75dcf6c4e7d08bd2408';
+
+/** The service's default I2P name registries. */
+export const REGISTRIES = ['http://notbob.i2p/cgi-bin/jump.cgi?q={name}', 'http://stats.i2p/cgi-bin/jump.cgi?a={name}'];
+export const B32 = 'nostrsrpr4c7lrswidgws2dzx5yrllqujdewru34jfydjjqplapq.b32.i2p';
+
+/** An I2P name lookup: notbob.i2p knows it, stats.i2p does not. */
+export function i2pLookup(over: Partial<I2pLookup> = {}): I2pLookup {
+  return { name: 'nostr-not.i2p', address: B32, registry: REGISTRIES[0], agreeing: [REGISTRIES[0]], disagreeing: [], unknown: [REGISTRIES[1]], unreachable: [], ...over };
+}
 
 /** The service's two keys, as it reports them. */
 export function keyInfos(relays: string[] = ['ws://127.0.0.1:7777']): KeyInfo[] {
@@ -163,6 +172,7 @@ export function settings(over: Partial<Settings> = {}): Settings {
     name: 'deadhop',
     relays: ['ws://127.0.0.1:7777'],
     relay_keys: {},
+    relay_names: {},
     public_invoicing: true,
     pow_bits: 16,
     pow_window_secs: 600,
@@ -179,7 +189,7 @@ export function settings(over: Partial<Settings> = {}): Settings {
     rate_requests_per_key_per_min: 120,
     poll_secs: 10,
     late_grace_secs: 86_400,
-    proxies: { list: [], mode: 'failover', rotate_secs: 3600, chaos_min_secs: 300, chaos_max_secs: 900, offline: 'kill_switch', transparent: false, rules: [] },
+    proxies: { list: [], mode: 'failover', rotate_secs: 3600, chaos_min_secs: 300, chaos_max_secs: 900, offline: 'kill_switch', transparent: false, rules: [], i2p_registries: [...REGISTRIES] },
     sweep: { enabled: false, mode: 'payjoin', threshold_sat: 1_000_000, max_fee_rate_sat_vb: 20, min_anonymity_set: 5 },
     ...over,
   };
