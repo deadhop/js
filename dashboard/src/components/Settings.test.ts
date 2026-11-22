@@ -224,6 +224,41 @@ describe('Settings', () => {
     expect(t.updateSettings).not.toHaveBeenCalled();
   });
 
+  it('refuses a relay beside the box it was typed in, with the reason, and takes Tor, I2P and FIPS ones on mainnet', async () => {
+    const mainnet = settingsView({ fixed: { ...settingsView().fixed, network: 'bitcoin' } });
+    setup(mainnet);
+    await screen.findByText('ws://127.0.0.1:7777');
+    const add = screen.getByLabelText('Add relay');
+    await fireEvent.input(add, { target: { value: 'ws://relay.example' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).toContain('On mainnet a relay must use wss://');
+    expect(alert.id).toBe('relay-error');
+    expect(add.getAttribute('aria-invalid')).toBe('true');
+    expect(add.getAttribute('aria-describedby')).toBe('relay-error');
+    expect(screen.queryByText('ws://relay.example')).toBeNull();
+    // Typing again clears it.
+    await fireEvent.input(add, { target: { value: 'ws://abc.onion' } });
+    expect(screen.queryByRole('alert')).toBeNull();
+    for (const url of ['ws://abc.onion', 'ws://node.b32.i2p', 'ws://npub1abc.fips:7777']) {
+      await fireEvent.input(add, { target: { value: url } });
+      await fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+      expect(screen.getByText(url)).toBeTruthy();
+    }
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('says in the save bar when a save was refused, with the service\'s reason', async () => {
+    const reason = "The service rejected the request as invalid. (relay 'ws://x' must use wss:// on mainnet)";
+    setup(settingsView(), { updateSettings: vi.fn().mockRejectedValue(new Error(reason)) });
+    await screen.findByText('ws://127.0.0.1:7777');
+    await fireEvent.input(screen.getByLabelText('Add relay'), { target: { value: 'wss://new.example' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+    await save();
+    await waitFor(() => expect(document.querySelector('.save-text.failed')!.textContent).toBe(`Not saved. ${reason}`));
+    expect(screen.getByRole('alert').textContent).toBe(reason);
+  });
+
   it("asks which relay takes over when a key's only relay is removed, and moves the key there", async () => {
     const t = setup(
       settingsView({
