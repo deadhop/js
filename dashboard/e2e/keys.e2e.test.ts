@@ -33,7 +33,7 @@ const chip = (page: Page, what: string, key: string) => click(page, `label:has(i
 async function reopenUntil(page: Page, tab: string, text: string, ms = 150_000) {
   const deadline = Date.now() + ms;
   for (;;) {
-    await button(page, tab === 'Overview' ? 'Settings' : 'Overview');
+    await button(page, tab === 'Overview' ? 'Network' : 'Overview');
     await button(page, tab);
     await new Promise((r) => setTimeout(r, 1500));
     if ((await page.evaluate(() => document.body.innerText)).toLowerCase().includes(text.toLowerCase())) return;
@@ -95,7 +95,7 @@ describe.skipIf(!existsSync(chrome) || binary === null)('two keys in a real brow
   }, 180_000);
 
   it('gives a relay to one key only, and shows it', async () => {
-    await button(page, 'Settings');
+    await button(page, 'Network');
     await hasText(page, 'Keys');
     await shot('04-settings-keys-and-relays', await card());
     // The second relay is for the public key only.
@@ -104,7 +104,7 @@ describe.skipIf(!existsSync(chrome) || binary === null)('two keys in a real brow
     await button(page, 'Save changes');
     await hasText(page, 'No unsaved changes.');
     for (let i = 0; i < 40 && !(await page.$('.key-badges')); i++) {
-      await button(page, 'Settings');
+      await button(page, 'Network');
       await button(page, 'Overview');
       await new Promise((r) => setTimeout(r, 1500));
     }
@@ -116,7 +116,7 @@ describe.skipIf(!existsSync(chrome) || binary === null)('two keys in a real brow
   }, 240_000);
 
   it('stops a save that would leave a key without a relay, and warns before the page loses its own', async () => {
-    await button(page, 'Settings');
+    await button(page, 'Network');
     await hasText(page, 'Keys');
     // The second relay is already for the public key only: take the first away from
     // the administration key too, and it has no relay at all.
@@ -138,7 +138,7 @@ describe.skipIf(!existsSync(chrome) || binary === null)('two keys in a real brow
   }, 240_000);
 
   it('gives each key its own proxy, and stops a save that leaves one without', async () => {
-    await button(page, 'Settings');
+    await button(page, 'Network');
     await hasText(page, 'Proxy list, in order');
     // First proxy for the public key, second for the administration key.
     await chip(page, 'Proxy 1', 'Administration');
@@ -146,7 +146,7 @@ describe.skipIf(!existsSync(chrome) || binary === null)('two keys in a real brow
     await shot('09-proxies-per-key', await proxies());
     await button(page, 'Save changes');
     await hasText(page, 'No unsaved changes.');
-    await reopenUntil(page, 'Settings', 'Administration: using');
+    await reopenUntil(page, 'Network', 'Administration: using');
     await shot('10-proxy-in-use-per-key', await proxies());
 
     // Both proxies for the public key leaves the administration key with none.

@@ -9,7 +9,7 @@
   import PrivacyAudit from './PrivacyAudit.svelte';
   import Settings from './Settings.svelte';
 
-  type Tab = 'overview' | 'privacy' | 'connectivity' | 'invoices' | 'settings' | 'operators' | 'maintenance';
+  type Tab = 'overview' | 'privacy' | 'connectivity' | 'invoices' | 'network' | 'settings' | 'operators' | 'maintenance';
 
   let {
     api,
@@ -33,6 +33,7 @@
   const TABS: { id: Tab; label: string }[] = [
     { id: 'overview', label: 'Overview' },
     { id: 'invoices', label: 'Invoices' },
+    { id: 'network', label: 'Network' },
     { id: 'settings', label: 'Settings' },
     { id: 'operators', label: 'Operators' },
     { id: 'maintenance', label: 'Maintenance' },
@@ -57,6 +58,8 @@
   <Connectivity {api} onBack={() => (tab = 'overview')} />
 {:else if tab === 'invoices'}
   <Invoices {api} {info} {onCreated} />
+{:else if tab === 'network'}
+  <Settings {api} {dashboardRelays} onChanged={onSettingsChanged} section="network" />
 {:else if tab === 'settings'}
   <Settings {api} {dashboardRelays} onChanged={onSettingsChanged} />
 {:else if tab === 'operators'}
