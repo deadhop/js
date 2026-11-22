@@ -2,7 +2,7 @@
   import type { PayApi, SettingsPatch } from '../lib/api';
   import { ADMIN, assignmentProblem, dependents, proxiesOf, relayKeysFor, relayKeysText, relayUsers, relaysOf, replacements, toggled } from '../lib/keys';
   import { proxiesPatch } from '../lib/proxy';
-  import type { Health, RelayHistory, Settings, SettingsView } from '../lib/schemas';
+  import type { Health, RelayHealth, RelayHistory, Settings, SettingsView } from '../lib/schemas';
   import { errorRate, relayProblem, statsFor } from '../lib/relays';
   import { REASONS, destination, firstRule, proxyName, rulesProblem } from '../lib/routes';
   import { mapRows, trace } from '../lib/routeview';
@@ -54,6 +54,32 @@
 
   // What the service says about its proxies, for the status beside each; optional here.
   let health = $state<Health | null>(null);
+  // Ask the service to check every relay now (each the way it connects: its
+  // route), then show the results under the relays.
+  let testing = $state(false);
+  async function testRelays() {
+    testing = true;
+    error = '';
+    try {
+      await api.checkRelays();
+      await loadHealth();
+    } catch (e) {
+      error = (e as Error).message;
+    } finally {
+      testing = false;
+    }
+  }
+  /** One relay's last check, in words. */
+  const checkLine = (c: RelayHealth) =>
+    [
+      c.connects ? 'connects' : 'does not connect',
+      c.forwards === null ? null : c.forwards ? 'carries events' : 'does not carry events',
+      c.rate_limited ? 'rate-limiting us' : null,
+      c.ms === null ? null : `${c.ms} ms`,
+    ]
+      .filter((x) => x !== null)
+      .join(' · ');
+
   const loadHealth = () =>
     api.getHealth().then(
       (h) => (health = h),
@@ -281,6 +307,7 @@
       <section class="card" aria-labelledby="s-conn">
         <div class="card-head">
           <h2 id="s-conn">Relays</h2>
+          <button type="button" class="sm relays-test" onclick={() => void testRelays()} disabled={testing}>{testing ? 'Testing…' : 'Test relays'}</button>
         </div>
         <ul class="plain key-explain" aria-label="Keys">
           {#each keys as k (k.id)}
@@ -296,6 +323,7 @@
           <ul class="plain relay-edit">
             {#each form.relays as r (r)}
               {@const st = statsFor(history, r)}
+              {@const check = health?.relay_health.find((c) => c.relay.replace(/\/$/, '') === r.replace(/\/$/, ''))}
               {@const routes = mapRows((health?.proxy_pool.routes ?? []).filter((x) => x.relay === r), null)}
               <li>
                 <code class="relay-url mono">{r}</code>
@@ -319,6 +347,13 @@
                 {/if}
                 <button type="button" class="sm" aria-expanded={why === r} aria-label={`Why ${r} goes this way`} onclick={() => (why = why === r ? null : r)}>Why</button>
                 <button type="button" class="sm remove" onclick={() => removeRelay(r)} disabled={form.relays.length === 1} aria-label={`Remove ${r}`}>Remove</button>
+                {#if check}
+                  <span class={`relay-check ${check.status}`} role="status" aria-label={`${r}: last check`}>
+                    <span class={`dot ${check.status === 'ok' ? 'ok' : check.status === 'degraded' ? 'warn' : 'bad'}`} aria-hidden="true"></span>
+                    <span>{checkLine(check)}</span>
+                    {#if check.status !== 'ok' && check.detail !== ''}<span class="relay-check-why">{check.detail}</span>{/if}
+                  </span>
+                {/if}
                 {#if why === r}
                   <div class="relay-why" role="region" aria-label={`Why ${r} goes this way`}>
                     {#each keys.filter((k) => relayUsers(form!.relay_keys, r, ids).includes(k.id)) as k (k.id)}
