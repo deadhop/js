@@ -2,7 +2,7 @@
   import type { PayApi } from '../lib/api';
   import { formatDuration } from '../lib/format';
   import { keyTag, toggled } from '../lib/keys';
-  import { MAX_PROXIES, buildProxy, editedUrl, isNew, move, newEntry, parseProxy, shortDuration, type ProxyFields } from '../lib/proxy';
+  import { MAX_PROXIES, buildProxy, editedUrl, isNew, move, newEntry, parseProxy, poolOf, shortDuration, type ProxyFields } from '../lib/proxy';
   import type { KeyInfo, OfflinePolicy, ProxyCheck, ProxyMode, ProxyPool, ProxySettings } from '../lib/schemas';
   import Duration from './Duration.svelte';
   import KeyChips from './KeyChips.svelte';
@@ -65,6 +65,18 @@
     if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
     e.preventDefault();
     moveTo(i, e.key === 'ArrowUp' ? i - 1 : i + 1);
+  }
+
+  function inPool(i: number, on: boolean) {
+    proxies.list = proxies.list.map((e, j) => (j === i ? { ...e, pool: on } : e));
+  }
+
+  /** What a proxy carries now and which rules point at it. */
+  function carrying(id: string): string {
+    const relays = [...new Set((pool?.routes ?? []).filter((r) => r.proxy === id).map((r) => r.relay))];
+    const rules = proxies.rules.flatMap((r, i) => (typeof r.to === 'object' && r.to.proxy === id ? [i + 1] : []));
+    const carries = `Carries ${relays.length === 1 ? '1 relay' : `${relays.length} relays`} now`;
+    return rules.length === 0 ? carries : `${carries} · rule${rules.length === 1 ? '' : 's'} ${rules.join(', ')} point${rules.length === 1 ? 's' : ''} here`;
   }
 
   function useProxy(i: number, id: string, on: boolean) {
@@ -242,8 +254,13 @@
                 <span class="badge fail" title={st.reason ?? ''}>unreachable</span>
               {/if}
             </span>
+            <div class="proxy-routes">
+              <label class="check pool-toggle"><input type="checkbox" checked={entry.pool} aria-label={`Proxy ${i + 1} in the default route`} onchange={(e) => inPool(i, e.currentTarget.checked)} /> In the default route</label>
+              {#if !entry.pool}<span class="badge not_checked">rules only</span>{/if}
+              <span class="hint">{carrying(entry.id)}</span>
+            </div>
             <div class="proxy-foot">
-              <KeyChips {keys} assigned={entry.keys} label={`Proxy ${i + 1}`} onchange={(id, on) => useProxy(i, id, on)} />
+              {#if entry.pool}<KeyChips {keys} assigned={entry.keys} label={`Proxy ${i + 1}`} onchange={(id, on) => useProxy(i, id, on)} />{:else}<span class="hint">Used only by rules that name it.</span>{/if}
               <span class="proxy-actions">
                 {#if proxies.list.length > 1}
                   <span class="move-pair">
@@ -296,7 +313,9 @@
       {/if}
 
       <div class="field strategy">
-        {#if proxies.list.length > 1}
+        <span class="field-title">Default route</span>
+        <p class="hint">Where a relay goes when no rule matches it{poolOf(proxies).length === 0 && proxies.list.length > 0 ? ': no proxy is in it, so those relays stay offline.' : '.'}</p>
+        {#if poolOf(proxies).length > 1}
           <span class="field-title" id="strategy-title">Strategy</span>
           <div class="segmented" role="radiogroup" aria-labelledby="strategy-title">
             {#each MODES as m (m.value)}

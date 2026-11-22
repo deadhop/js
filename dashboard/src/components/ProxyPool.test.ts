@@ -18,7 +18,7 @@ function setup(over: Partial<ProxySettings> = {}, pool: ProxyPool | null = null,
     getRelayHistory: vi.fn().mockResolvedValue(relayHistory({ relays: [] })),
     getHealth: pool === null ? vi.fn().mockRejectedValue(new Error('no')) : vi.fn().mockResolvedValue(health({ proxy_pool: pool })),
   };
-  render(Settings, { props: { api: fns as unknown as PayApi, dashboardRelays: ['ws://127.0.0.1:7777'], onChanged: vi.fn(), confirm: () => true, section: 'network' } });
+  render(Settings, { props: { api: fns as unknown as PayApi, dashboardRelays: ['ws://127.0.0.1:7777'], onChanged: vi.fn(), confirm: () => true, section: 'network', networkView: 'proxies' } });
   return fns;
 }
 

@@ -4,8 +4,12 @@
   import { proxiesPatch } from '../lib/proxy';
   import type { Health, RelayHistory, Settings, SettingsView } from '../lib/schemas';
   import { errorRate, relayProblem, statsFor } from '../lib/relays';
+  import { REASONS, destination, firstRule, proxyName, rulesProblem } from '../lib/routes';
+  import { mapRows, trace } from '../lib/routeview';
   import KeyChips from './KeyChips.svelte';
   import ProxyPool from './ProxyPool.svelte';
+  import RouteMap from './RouteMap.svelte';
+  import Rules from './Rules.svelte';
   import Warnings from './Warnings.svelte';
 
   let {
@@ -15,6 +19,7 @@
     confirm = (message: string) => window.confirm(message),
     showSweep = false,
     section = 'general',
+    networkView = 'routes',
   }: {
     api: PayApi;
     /** Relays this page itself uses (from config.json). */
@@ -25,7 +30,15 @@
     showSweep?: boolean;
     /** Which cards to show: relays and proxies (the Network tab), or everything else. */
     section?: 'general' | 'network';
+    /** The Network tab's view to open on. */
+    networkView?: NetworkView;
   } = $props();
+
+  type NetworkView = 'routes' | 'relays' | 'proxies' | 'rules';
+  // svelte-ignore state_referenced_locally
+  let netView = $state<NetworkView>(networkView);
+  /** The relay whose "Why" panel is open. */
+  let why = $state<string | null>(null);
 
   // A day of relay results, for the error rate beside each relay; optional here.
   let history = $state<RelayHistory | null>(null);
@@ -101,7 +114,7 @@
     }
     if (JSON.stringify(f.relays) !== JSON.stringify(live.relays)) patch.relays = [...f.relays];
     // Which keys use which relays: only the restricted relays are saved.
-    const problem = assignmentProblem(keys, f);
+    const problem = assignmentProblem(keys, f) || rulesProblem(f, keys, live.proxies.list, dashboardRelays);
     if (problem !== '') return problem;
     const assigned = relayKeysFor(f.relays, f.relay_keys, ids);
     if (relayKeysText(assigned) !== relayKeysText(relayKeysFor(live.relays, live.relay_keys, ids))) patch.relay_keys = assigned;
@@ -249,6 +262,16 @@
     }}
   >
     {#if section === 'network'}
+      <div class="network-nav segmented" role="tablist" aria-label="Network">
+        {#each [['routes', 'Routes', null], ['relays', 'Relays', form.relays.length], ['proxies', 'Proxies', form.proxies.list.length], ['rules', 'Rules', form.proxies.rules.length]] as [id, label, n] (id)}
+          <button type="button" role="tab" aria-selected={netView === id} class:on={netView === id} onclick={() => (netView = id as NetworkView)}>{label}{#if n !== null}<span class="count">{n}</span>{/if}</button>
+        {/each}
+      </div>
+      {#if netView === 'routes'}
+        <RouteMap {keys} live={view.settings} pool={health?.proxy_pool ?? null} />
+      {:else if netView === 'rules'}
+        <Rules {keys} {form} saved={view.settings.proxies.list} pool={health?.proxy_pool ?? null} {dashboardRelays} locked={view.fixed.proxy_locked} onproxies={() => (netView = 'proxies')} />
+      {:else if netView === 'relays'}
       <section class="card" aria-labelledby="s-conn">
         <div class="card-head">
           <h2 id="s-conn">Relays</h2>
@@ -267,6 +290,7 @@
           <ul class="plain relay-edit">
             {#each form.relays as r (r)}
               {@const st = statsFor(history, r)}
+              {@const routes = mapRows((health?.proxy_pool.routes ?? []).filter((x) => x.relay === r), null)}
               <li>
                 <code class="relay-url mono">{r}</code>
                 {#if st}
@@ -281,7 +305,34 @@
                   label={r}
                   onchange={(id, on) => useRelay(r, id, on)}
                 />
+                {#if routes.length === 1}
+                  {@const p = form.proxies.list.find((e) => e.id === routes[0].proxy)}
+                  <span class={`via-pill ${routes[0].via === 'proxy' ? `proxy-c${form.proxies.list.indexOf(p!) % 8}` : routes[0].via}`} title={REASONS[routes[0].reason]}><span class="via-dot"></span>{routes[0].via === 'proxy' ? proxyName(p ?? { name: '', url: routes[0].proxy! }) : routes[0].via === 'direct' ? 'Direct' : 'No connection'}</span>
+                {:else if routes.length > 1}
+                  <span class="via-pill"><span class="via-dot"></span>Differs per key</span>
+                {/if}
+                <button type="button" class="sm" aria-expanded={why === r} aria-label={`Why ${r} goes this way`} onclick={() => (why = why === r ? null : r)}>Why</button>
                 <button type="button" class="sm remove" onclick={() => removeRelay(r)} disabled={form.relays.length === 1} aria-label={`Remove ${r}`}>Remove</button>
+                {#if why === r}
+                  <div class="relay-why" role="region" aria-label={`Why ${r} goes this way`}>
+                    {#each keys.filter((k) => relayUsers(form!.relay_keys, r, ids).includes(k.id)) as k (k.id)}
+                      {@const live = routes.find((x) => x.keys.includes(k.id))}
+                      <div class="relay-why-key">
+                        <b>{k.label}</b>
+                        <span class="hint">{live === undefined ? 'Not reported by the service yet.' : `Now: ${live.via === 'proxy' ? proxyName(form.proxies.list.find((e) => e.id === live.proxy) ?? { name: '', url: live.proxy! }) : live.via === 'direct' ? 'direct' : 'no connection'}, ${REASONS[live.reason]}.`}</span>
+                        <ol class="plain relay-trace" aria-label={`Rules checked for ${k.label}`}>
+                          {#each trace(form.proxies.rules, k.id, r) as c (c.no)}
+                            <li class:matched={c.matched}><span>{c.matched ? '✓' : '–'}</span><span>{c.no}</span><span class="mono">{c.match}</span><span>{c.matched ? `matched: ${destination(form.proxies.rules[c.no - 1].to, form.proxies.list).toLowerCase()}` : c.forKey ? 'no match' : `not for ${k.label}`}</span></li>
+                          {:else}
+                            <li><span>·</span><span></span><span>No rules</span><span>default route</span></li>
+                          {/each}
+                          {#if firstRule(form.proxies.rules, k.id, r) < 0 && form.proxies.rules.length > 0}<li><span>·</span><span></span><span>No rule matched</span><span>default route</span></li>{/if}
+                        </ol>
+                      </div>
+                    {/each}
+                    <button type="button" class="sm" onclick={() => (netView = 'rules')}>Open the rules</button>
+                  </div>
+                {/if}
               </li>
             {/each}
           </ul>
@@ -291,6 +342,14 @@
             <button type="button" onclick={addRelay} disabled={form.relays.length >= 8}>Add</button>
           </div>
           {#if relayError !== ''}<p id="relay-error" class="field-error" role="alert">{relayError}</p>{/if}
+          {#if relayError === '' && /^wss?:\/\/\S+$/.test(newRelay.trim())}
+            {@const url = newRelay.trim()}
+            {@const lines = keys.map((k) => {
+              const i = firstRule(form!.proxies.rules, k.id, url);
+              return i < 0 ? 'no rule matches: the default route' : `rule ${i + 1} (${form!.proxies.rules[i].match.join(', ')}) would match: ${destination(form!.proxies.rules[i].to, form!.proxies.list).toLowerCase()}`;
+            })}
+            <p class="hint relay-preview" role="status">{lines.every((l) => l === lines[0]) ? `Before you add it: ${lines[0]}.` : `Before you add it: ${keys.map((k, i) => `${k.label}: ${lines[i]}`).join('; ')}.`}</p>
+          {/if}
           <p class="hint">
             On mainnet relays use <span class="mono">wss://</span>. Plain <span class="mono">ws://</span> is for a relay on this machine, or on Tor
             (<span class="mono">.onion</span>), I2P (<span class="mono">.i2p</span>) or FIPS (<span class="mono">.fips</span>), which encrypt the connection
@@ -306,7 +365,9 @@
 
       </section>
 
-      <ProxyPool {api} {keys} proxies={form.proxies} live={view.settings.proxies} pool={health?.proxy_pool ?? null} locked={view.fixed.proxy_locked} />
+      {:else}
+        <ProxyPool {api} {keys} proxies={form.proxies} live={view.settings.proxies} pool={health?.proxy_pool ?? null} locked={view.fixed.proxy_locked} />
+      {/if}
     {:else}
 
       <section class="card" aria-labelledby="s-abuse">
