@@ -80,6 +80,23 @@ describe('PayApi', () => {
   it('maps thrown errors to stable codes', async () => {
     const thrown = (e: unknown) => new PayApi(async () => Promise.reject(e)).getInfo();
     await expect(thrown({ code: -32001, data: { code: 'unauthorized' } })).rejects.toMatchObject({ code: 'unauthorized' });
+    // A refused request says why, in the service's words, without the protocol's prefixes.
+    const why = "relay 'ws://x.example' must use wss:// on mainnet";
+    await expect(thrown({ message: `MCP error -32602: invalid parameters: ${why}`, data: { code: 'invalid_params' } })).rejects.toMatchObject({
+      code: 'invalid_params',
+      message: `The service rejected the request as invalid. (${why})`,
+    });
+    await expect(thrown({ message: 'MCP error -32602: invalid parameters: ', data: { code: 'invalid_params' } })).rejects.toMatchObject({
+      message: 'The service rejected the request as invalid.',
+    });
+    await expect(thrown({ data: { code: 'invalid_params' } })).rejects.toMatchObject({ message: 'The service rejected the request as invalid.' });
+    await expect(thrown({ message: 'x'.repeat(500), data: { code: 'invalid_params' } })).rejects.toMatchObject({
+      message: expect.stringMatching(/^The service rejected the request as invalid\. \(x{300}\)$/),
+    });
+    // Other codes keep their fixed text: nothing else the service says is shown.
+    await expect(thrown({ message: 'MCP error -32001: secret detail', data: { code: 'unauthorized' } })).rejects.toMatchObject({
+      message: 'This key is not allowed to do that.',
+    });
     await expect(thrown({ data: { code: 'made_up' } })).rejects.toMatchObject({ code: 'network' });
     await expect(thrown({ data: { code: 7 } })).rejects.toMatchObject({ code: 'network' });
     await expect(thrown(new Error('socket closed'))).rejects.toMatchObject({ code: 'network' });

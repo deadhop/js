@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { errorRate, statsFor } from './relays';
+import { errorRate, isOverlayHost, relayProblem, statsFor } from './relays';
 import { relayHistory, relayStats } from '../test-helpers';
 
 describe('relay history helpers', () => {
@@ -17,5 +17,41 @@ describe('relay history helpers', () => {
     expect(errorRate(relayStats({ checks: 10, sends: 30, check_failures: 1, send_failures: 0 }))).toMatchObject({ failed: 1, total: 40, text: '2.5%', tone: 'warn' });
     expect(errorRate(relayStats({ checks: 5, sends: 5, check_failures: 1, send_failures: 1 }))).toMatchObject({ text: '20%', tone: 'bad' });
     expect(errorRate(relayStats({ checks: 4, sends: 0, check_failures: 4, send_failures: 0 }))).toMatchObject({ text: '100%', tone: 'bad' });
+  });
+});
+
+describe('relayProblem', () => {
+  const ok = (url: string, net = 'bitcoin', listed: string[] = []) => expect(relayProblem(url, net, listed)).toBe('');
+  const bad = (url: string, why: RegExp, net = 'bitcoin', listed: string[] = []) => expect(relayProblem(url, net, listed)).toMatch(why);
+
+  it('takes wss:// anywhere, and plain ws:// for this machine on any network', () => {
+    ok('wss://relay.example');
+    ok('ws://127.0.0.1:7777');
+    ok('ws://localhost:7777');
+    ok('ws://[::1]:7777/path');
+    ok('ws://relay.example', 'regtest');
+  });
+
+  it('takes plain ws:// on mainnet for Tor, I2P and FIPS, which encrypt the connection themselves', () => {
+    ok('ws://4ajy63hxt5hui5o4zg5ep675p2jtjuolyhpzfjjueyfdh3p6gvzpk6id.onion/');
+    ok('ws://abc.b32.i2p:80');
+    ok('ws://npub1abc.fips:7777');
+    ok('ws://ABC.ONION.');
+  });
+
+  it('says why an address is refused', () => {
+    bad('https://nope', /starts with wss:\/\//);
+    bad('wss://a b.example', /no spaces/);
+    bad('wss://', /not a valid relay address/);
+    bad('ws://relay.example', /On mainnet a relay must use wss:\/\/.*\.onion, \.i2p and \.fips/);
+    bad('wss://user@relay.example', /user name or password/);
+    bad('wss://relay.example', /already listed/, 'bitcoin', ['wss://relay.example/']);
+  });
+
+  it('does not let a look-alike host pass for an overlay or local one', () => {
+    for (const spoof of ['ws://a.onion.example', 'ws://onion', 'ws://a.fips.example.com', 'ws://x.i2px', 'ws://127.0.0.1.example']) bad(spoof, /must use wss:\/\//);
+    bad('ws://127.0.0.1:80@evil.example', /user name or password/);
+    expect(isOverlayHost('a.onion')).toBe(true);
+    expect(isOverlayHost('onion')).toBe(false);
   });
 });
