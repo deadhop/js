@@ -39,9 +39,15 @@ describe('Admin', () => {
     expect(screen.getByRole('button', { name: 'Overview' }).getAttribute('aria-current')).toBeNull();
 
     await fireEvent.click(screen.getByRole('button', { name: 'Network' }));
-    await screen.findByRole('heading', { name: 'Relays' });
-    expect(screen.getByRole('heading', { name: 'Proxies' })).toBeTruthy();
+    // Network opens on the routes, and its views switch in place.
+    await screen.findByRole('tab', { name: 'Routes' });
     expect(screen.getByRole('button', { name: 'Network' }).getAttribute('aria-current')).toBe('page');
+    await fireEvent.click(screen.getByRole('tab', { name: /^Relays/ }));
+    await screen.findByRole('heading', { name: 'Relays' });
+    await fireEvent.click(screen.getByRole('tab', { name: /^Proxies/ }));
+    await screen.findByRole('heading', { name: 'Proxies' });
+    await fireEvent.click(screen.getByRole('tab', { name: /^Rules/ }));
+    await screen.findByRole('heading', { name: 'Rules' });
 
     await fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
     await screen.findByRole('heading', { name: 'Abuse protection' });

@@ -33,7 +33,7 @@ function setup(
   };
   const onChanged = vi.fn();
   const confirm = vi.fn().mockReturnValue(answer);
-  render(Settings, { props: { api: api as unknown as PayApi, dashboardRelays, onChanged, confirm, showSweep: true, section } });
+  render(Settings, { props: { api: api as unknown as PayApi, dashboardRelays, onChanged, confirm, showSweep: true, section, networkView: 'relays' } });
   return { ...api, onChanged, confirm };
 }
 
@@ -85,6 +85,7 @@ describe('Settings', () => {
     setup();
     await screen.findByRole('heading', { name: 'How the service is reached' });
     expect(screen.getByRole('heading', { name: 'Relays' })).toBeTruthy();
+    await fireEvent.click(screen.getByRole('tab', { name: /^Proxies/ }));
     expect(screen.getByRole('heading', { name: 'Proxies' })).toBeTruthy();
     expect(screen.queryByRole('heading', { name: 'Abuse protection' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Reset to environment' })).toBeNull();
@@ -248,6 +249,18 @@ describe('Settings', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
+  it('forgets a refused change when it is discarded', async () => {
+    const proxies = { ...settings().proxies, list: [{ id: 'a', name: '', url: 'socks5://h:1', keys: [], pool: true }] };
+    setup(settingsView({ settings: settings({ proxies }) }));
+    await fireEvent.click(await screen.findByRole('tab', { name: /^Proxies/ }));
+    await fireEvent.click(await screen.findByLabelText('Proxy 1 used by Administration'));
+    await save();
+    expect(document.querySelector('.save-text.failed')).toBeTruthy();
+    await fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    expect(screen.getByText('No unsaved changes.')).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
   it('says in the save bar when a save was refused, with the service\'s reason', async () => {
     const reason = "The service rejected the request as invalid. (relay 'ws://x' must use wss:// on mainnet)";
     setup(settingsView(), { updateSettings: vi.fn().mockRejectedValue(new Error(reason)) });
@@ -332,7 +345,7 @@ describe('Settings', () => {
   });
 
   it('counts the proxies each key uses', async () => {
-    const proxies = { ...settings().proxies, list: [{ id: 'a', name: '', url: 'socks5://h:1', keys: ['invoices'] }, { id: 'b', name: '', url: 'socks5://h:2', keys: [] }] };
+    const proxies = { ...settings().proxies, list: [{ id: 'a', name: '', url: 'socks5://h:1', keys: ['invoices'], pool: true }, { id: 'b', name: '', url: 'socks5://h:2', keys: [], pool: true }] };
     setup(settingsView({ settings: settings({ proxies }) }));
     const keys = await screen.findByRole('list', { name: 'Keys' });
     expect([...keys.querySelectorAll('.count')].map((c) => c.textContent)).toEqual(['1 relay · 2 proxies', '1 relay · 1 proxy']);
@@ -422,10 +435,11 @@ describe('Settings', () => {
     });
 
     it('refuses to leave a key with no proxy while there is a list', async () => {
-      const proxies = { ...settings().proxies, list: [{ id: 'a', name: '', url: 'socks5://h:1', keys: [] }] };
+      const proxies = { ...settings().proxies, list: [{ id: 'a', name: '', url: 'socks5://h:1', keys: [], pool: true }] };
       const t = setup(settingsView({ settings: settings({ proxies }) }));
+      await fireEvent.click(await screen.findByRole('tab', { name: /^Proxies/ }));
       await fireEvent.click(await screen.findByLabelText('Proxy 1 used by Administration'));
-      expect(screen.getByText('No proxy is assigned to Administration: it would connect without one. Give it a proxy.')).toBeTruthy();
+      expect(screen.getByText('No proxy in the default route is assigned to Administration: its relays would have no way out. Give it a proxy.')).toBeTruthy();
       await save();
       expect(t.updateSettings).not.toHaveBeenCalled();
     });

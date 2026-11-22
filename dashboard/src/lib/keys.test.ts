@@ -34,7 +34,7 @@ describe('who uses what', () => {
   it("lists one key's relays and proxies", () => {
     const relays = ['wss://a.example', 'wss://b.example'];
     expect(relaysOf(relays, { 'wss://b.example': ['invoices'] }, 'admin', ids)).toEqual(['wss://a.example']);
-    const proxies = { ...settings().proxies, list: [{ id: 'a', name: '', url: 'socks5://h:1', keys: ['invoices'] }, { id: 'b', name: '', url: 'socks5://h:2', keys: [] }] };
+    const proxies = { ...settings().proxies, list: [{ id: 'a', name: '', url: 'socks5://h:1', keys: ['invoices'], pool: true }, { id: 'b', name: '', url: 'socks5://h:2', keys: [], pool: true }] };
     expect(proxiesOf(proxies, 'admin', ids).map((p) => p.id)).toEqual(['b']);
   });
 
@@ -44,8 +44,13 @@ describe('who uses what', () => {
     expect(assignmentProblem(keys, ok)).toBe('');
     const noRelay = settings({ relays: ['wss://a.example'], relay_keys: { 'wss://a.example': ['invoices'] } });
     expect(assignmentProblem(keys, noRelay)).toContain('No relay is assigned to Administration');
-    const only = (keysOf: string[], transparent = false) => settings({ proxies: { ...settings().proxies, transparent, list: [{ id: 'a', name: '', url: 'socks5://h:1', keys: keysOf }] } });
-    expect(assignmentProblem(keys, only(['invoices']))).toContain('No proxy is assigned to Administration');
+    const only = (keysOf: string[], transparent = false) => settings({ proxies: { ...settings().proxies, transparent, list: [{ id: 'a', name: '', url: 'socks5://h:1', keys: keysOf, pool: true }] } });
+    expect(assignmentProblem(keys, only(['invoices']))).toContain('No proxy in the default route is assigned to Administration');
+    // A proxy kept out of the default route does not count, unless no relay of the key takes it.
+    const rulesOnly = settings({ proxies: { ...settings().proxies, list: [{ id: 'a', name: '', url: 'socks5://h:1', keys: [], pool: false }] } });
+    expect(assignmentProblem(keys, rulesOnly)).toContain('Public invoices');
+    const allRuled = { ...rulesOnly, proxies: { ...rulesOnly.proxies, rules: [{ name: '', match: ['*'], keys: [], to: { proxy: 'a' }, fallback: 'offline' as const }] } };
+    expect(assignmentProblem(keys, allRuled)).toBe('');
     expect(assignmentProblem(keys, only([]))).toBe('');
     // Nothing to assign when the proxy is the operator's own, or there is none.
     expect(assignmentProblem(keys, only(['invoices'], true))).toBe('');
