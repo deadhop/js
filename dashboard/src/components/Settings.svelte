@@ -79,6 +79,8 @@
   function show(v: SettingsView) {
     view = v;
     form = structuredClone($state.snapshot(v.settings)) as Settings;
+    // A fresh form has nothing wrong with it (a discarded change takes its error along).
+    error = '';
   }
 
   async function run(action: () => Promise<SettingsView>, done: string) {
