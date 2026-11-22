@@ -23,6 +23,8 @@ async function click(page: Page, selector: string) {
   await handle!.click();
 }
 const button = (page: Page, name: string) => click(page, `::-p-xpath(//button[normalize-space()="${name}"])`);
+/** Open one of the Network tab's views (Routes, Relays, Proxies, Rules). */
+const view = (page: Page, name: string) => click(page, `::-p-xpath(//button[@role="tab"][starts-with(normalize-space(.), "${name}")])`);
 const byLabel = (page: Page, label: string) => click(page, `[aria-label="${label}"]`);
 /** Open `tab` afresh (the views read the service when they open) until `text` shows. */
 async function reopenUntil(page: Page, tab: string, text: string, ms = 150_000) {
@@ -30,6 +32,8 @@ async function reopenUntil(page: Page, tab: string, text: string, ms = 150_000) 
   for (;;) {
     await button(page, tab === 'Overview' ? 'Network' : 'Overview');
     await button(page, tab);
+    // The view appears once the page has read the settings; a slow read is retried.
+    if (tab === 'Network') await view(page, 'Proxies').catch(() => undefined);
     await new Promise((r) => setTimeout(r, 1500));
     if ((await page.evaluate(() => document.body.innerText)).toLowerCase().includes(text.toLowerCase())) return;
     if (Date.now() > deadline) throw new Error(`"${text}" did not show on ${tab}`);
@@ -79,6 +83,7 @@ describe.skipIf(!existsSync(chrome) || binary === null)('proxy pool in a real br
     await hasText(page, 'Reachable');
     await shot('08-overview-proxy-active');
     await button(page, 'Network');
+    await view(page, 'Proxies');
     await hasText(page, 'Proxy list, in order');
     await hasText(page, 'in use');
     const [first, second] = stack.proxies.map((p) => p.url);

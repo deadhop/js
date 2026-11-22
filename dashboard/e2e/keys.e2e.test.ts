@@ -27,6 +27,8 @@ async function click(page: Page, selector: string) {
   await handle!.click();
 }
 const button = (page: Page, name: string) => click(page, `::-p-xpath(//button[normalize-space()="${name}"])`);
+/** Open one of the Network tab's views (Routes, Relays, Proxies, Rules). */
+const view = (page: Page, name: string) => click(page, `::-p-xpath(//button[@role="tab"][starts-with(normalize-space(.), "${name}")])`);
 /** A "used by" switch: the label that holds the checkbox for `what` and `key`. */
 const chip = (page: Page, what: string, key: string) => click(page, `label:has(input[aria-label="${what} used by ${key}"])`);
 /** Open `tab` afresh (the views read the service when they open) until `text` shows. */
@@ -35,6 +37,8 @@ async function reopenUntil(page: Page, tab: string, text: string, ms = 150_000) 
   for (;;) {
     await button(page, tab === 'Overview' ? 'Network' : 'Overview');
     await button(page, tab);
+    // The view appears once the page has read the settings; a slow read is retried.
+    if (tab === 'Network') await view(page, 'Proxies').catch(() => undefined);
     await new Promise((r) => setTimeout(r, 1500));
     if ((await page.evaluate(() => document.body.innerText)).toLowerCase().includes(text.toLowerCase())) return;
     if (Date.now() > deadline) throw new Error(`"${text}" did not show on ${tab}`);
@@ -96,6 +100,7 @@ describe.skipIf(!existsSync(chrome) || binary === null)('two keys in a real brow
 
   it('gives a relay to one key only, and shows it', async () => {
     await button(page, 'Network');
+    await view(page, 'Relays');
     await hasText(page, 'Keys');
     await shot('04-settings-keys-and-relays', await card());
     // The second relay is for the public key only.
@@ -115,30 +120,28 @@ describe.skipIf(!existsSync(chrome) || binary === null)('two keys in a real brow
     expect(keys).not.toContain(RELAY_B);
   }, 240_000);
 
-  it('stops a save that would leave a key without a relay, and warns before the page loses its own', async () => {
+  it('will not let a key lose its last relay, nor the page its own way in', async () => {
     await button(page, 'Network');
+    await view(page, 'Relays');
     await hasText(page, 'Keys');
-    // The second relay is already for the public key only: take the first away from
-    // the administration key too, and it has no relay at all.
-    await chip(page, RELAY_A, 'Administration');
-    await button(page, 'Save changes');
-    await hasText(page, 'No relay is assigned to Administration');
-    await shot('07-blocked-no-relay');
-    await button(page, 'Discard');
-    await hasText(page, 'No unsaved changes.');
-
-    // The page signs in over the first relay: giving the administration key only
-    // the second one is allowed, but the page would lose its way in.
+    const locked = (relay: string, key: string) => page.$eval(`input[aria-label="${relay} used by ${key}"]`, (el) => (el as HTMLInputElement).disabled);
+    // The second relay is for the public key only, so the first is the
+    // administration key's last relay (and the one this page signs in over).
+    expect(await locked(RELAY_A, 'Administration')).toBe(true);
+    await shot('07-last-relay-locked', await card());
+    // Giving the administration key the second relay too: the first stays
+    // locked, because this page signs in through it.
     await chip(page, RELAY_B, 'Administration');
-    await chip(page, RELAY_A, 'Administration');
-    await hasText(page, 'Keep one of them for that key');
-    await shot('08-lockout-warning', await card());
+    expect(await locked(RELAY_A, 'Administration')).toBe(true);
+    expect(await locked(RELAY_B, 'Administration')).toBe(false);
+    await shot('08-page-relay-locked', await card());
     await button(page, 'Discard');
     await hasText(page, 'No unsaved changes.');
   }, 240_000);
 
   it('gives each key its own proxy, and stops a save that leaves one without', async () => {
     await button(page, 'Network');
+    await view(page, 'Proxies');
     await hasText(page, 'Proxy list, in order');
     // First proxy for the public key, second for the administration key.
     await chip(page, 'Proxy 1', 'Administration');
@@ -153,7 +156,7 @@ describe.skipIf(!existsSync(chrome) || binary === null)('two keys in a real brow
     await chip(page, 'Proxy 2', 'Public invoices');
     await chip(page, 'Proxy 2', 'Administration');
     await button(page, 'Save changes');
-    await hasText(page, 'No proxy is assigned to Administration');
+    await hasText(page, 'No proxy in the default route is assigned to Administration');
     await shot('11-blocked-no-proxy');
     await button(page, 'Discard');
     await hasText(page, 'No unsaved changes.');

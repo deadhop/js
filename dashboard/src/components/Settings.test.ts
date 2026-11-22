@@ -249,6 +249,18 @@ describe('Settings', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
+  it('forgets a refused change when it is discarded', async () => {
+    const proxies = { ...settings().proxies, list: [{ id: 'a', name: '', url: 'socks5://h:1', keys: [], pool: true }] };
+    setup(settingsView({ settings: settings({ proxies }) }));
+    await fireEvent.click(await screen.findByRole('tab', { name: /^Proxies/ }));
+    await fireEvent.click(await screen.findByLabelText('Proxy 1 used by Administration'));
+    await save();
+    expect(document.querySelector('.save-text.failed')).toBeTruthy();
+    await fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    expect(screen.getByText('No unsaved changes.')).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
   it('says in the save bar when a save was refused, with the service\'s reason', async () => {
     const reason = "The service rejected the request as invalid. (relay 'ws://x' must use wss:// on mainnet)";
     setup(settingsView(), { updateSettings: vi.fn().mockRejectedValue(new Error(reason)) });
