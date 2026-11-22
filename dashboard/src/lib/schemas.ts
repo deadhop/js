@@ -177,9 +177,29 @@ export const ProxyEntrySchema = z.strictObject({
   id: z.string().min(1).max(24),
   name: text(60),
   url: z.string().max(300),
+  /** Keys whose default route may use it; empty is every key. */
   keys: keyIds,
+  /** In the default route (the pool); otherwise used only by rules that name it. */
+  pool: z.boolean(),
 });
 export type ProxyEntry = z.infer<typeof ProxyEntrySchema>;
+
+/** Where the relays a rule matches go. */
+export const RouteToSchema = z.union([z.enum(['pool', 'direct', 'block']), z.strictObject({ proxy: z.string().min(1).max(24) })]);
+export type RouteTo = z.infer<typeof RouteToSchema>;
+
+/** One routing rule. The first rule that applies to a key and matches a relay decides its route. */
+export const RuleSchema = z.strictObject({
+  name: text(60),
+  /** Relay addresses (`wss://…`) or host patterns (`*.onion`, `relay*.example:7777`). */
+  match: z.array(z.string().max(256)).min(1).max(16),
+  /** Keys the rule applies to; empty is every key. */
+  keys: keyIds,
+  to: RouteToSchema,
+  /** For a rule through one proxy: what to do while it is down. */
+  fallback: z.enum(['offline', 'pool']),
+});
+export type Rule = z.infer<typeof RuleSchema>;
 
 export const ProxySettingsSchema = z.strictObject({
   list: z.array(ProxyEntrySchema).max(8),
@@ -189,8 +209,13 @@ export const ProxySettingsSchema = z.strictObject({
   chaos_max_secs: count,
   offline: OfflinePolicySchema,
   transparent: z.boolean(),
+  rules: z.array(RuleSchema).max(16),
 });
 export type ProxySettings = z.infer<typeof ProxySettingsSchema>;
+
+/** Why a relay goes the way it does (from the service). */
+export const RouteReasonSchema = z.enum(['rule', 'default', 'fallback', 'proxy_down', 'blocked', 'pool_offline', 'never_direct', 'transparent']);
+export type RouteReason = z.infer<typeof RouteReasonSchema>;
 
 export const ProxyPoolSchema = z.strictObject({
   state: z.enum(['transparent', 'direct', 'active', 'suspended', 'offline']),
@@ -213,6 +238,7 @@ export const ProxyPoolSchema = z.strictObject({
         status: z.string().max(20).nullable(),
         reason: z.string().max(300).nullable(),
         keys: keyIds,
+        pool: z.boolean(),
       }),
     )
     .max(8),
@@ -225,11 +251,28 @@ export const ProxyPoolSchema = z.strictObject({
         active: z.string().max(24).nullable(),
         reachable: count,
         next_switch_at: unixTime.nullable(),
+        /** Whether any relay of this key may take the default route. */
+        uses_default: z.boolean(),
       }),
     )
     .max(8),
+  /** Where every relay of every key goes now, as the service decided. */
+  routes: z
+    .array(
+      z.strictObject({
+        key: z.string().max(40),
+        relay: z.string().max(300),
+        /** Number (from 1) of the rule that matched; null: the default route. */
+        rule: z.number().int().min(1).max(16).nullable(),
+        via: z.enum(['proxy', 'direct', 'off']),
+        proxy: z.string().max(24).nullable(),
+        reason: RouteReasonSchema,
+      }),
+    )
+    .max(64),
 });
 export type ProxyPool = z.infer<typeof ProxyPoolSchema>;
+export type RouteState = ProxyPool['routes'][number];
 
 /** One of the service's keys and what it is for. */
 export const KeyInfoSchema = z.strictObject({

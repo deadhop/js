@@ -103,7 +103,7 @@ export function privacyAudit(over: Partial<PrivacyAudit> = {}): PrivacyAudit {
 }
 
 export function proxyPool(over: Partial<ProxyPool> = {}): ProxyPool {
-  return { state: 'direct', posture: 'normal', mode: 'failover', offline: 'kill_switch', transparent: false, active: null, reachable: 0, total: 0, next_switch_at: null, proxies: [], lanes: [], ...over };
+  return { state: 'direct', posture: 'normal', mode: 'failover', offline: 'kill_switch', transparent: false, active: null, reachable: 0, total: 0, next_switch_at: null, proxies: [], lanes: [], routes: [], ...over };
 }
 
 /** One proxy in use, as the service reports it. */
@@ -113,7 +113,7 @@ export function activePool(over: Partial<ProxyPool> = {}): ProxyPool {
     active: 'p1',
     reachable: 1,
     total: 1,
-    proxies: [{ id: 'p1', name: '', url: 'socks5://127.0.0.1:9050', reachable: true, checked_at: 1_700_000_050, status: 'connected', reason: null, keys: [] }],
+    proxies: [{ id: 'p1', name: '', url: 'socks5://127.0.0.1:9050', reachable: true, checked_at: 1_700_000_050, status: 'connected', reason: null, keys: [], pool: true }],
     ...over,
   });
 }
@@ -179,7 +179,7 @@ export function settings(over: Partial<Settings> = {}): Settings {
     rate_requests_per_key_per_min: 120,
     poll_secs: 10,
     late_grace_secs: 86_400,
-    proxies: { list: [], mode: 'failover', rotate_secs: 3600, chaos_min_secs: 300, chaos_max_secs: 900, offline: 'kill_switch', transparent: false },
+    proxies: { list: [], mode: 'failover', rotate_secs: 3600, chaos_min_secs: 300, chaos_max_secs: 900, offline: 'kill_switch', transparent: false, rules: [] },
     sweep: { enabled: false, mode: 'payjoin', threshold_sat: 1_000_000, max_fee_rate_sat_vb: 20, min_anonymity_set: 5 },
     ...over,
   };

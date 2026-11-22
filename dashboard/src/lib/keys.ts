@@ -1,5 +1,6 @@
 // The service's keys and which relays and proxies each one uses. A relay or a
 // proxy lists the keys that may use it; an empty list is every key.
+import { usesDefault } from './routes';
 import type { KeyInfo, ProxySettings, Settings } from './schemas';
 
 export const ADMIN = 'admin';
@@ -54,7 +55,8 @@ export function assignmentProblem(keys: KeyInfo[], form: Settings): string {
   }
   if (form.proxies.transparent || form.proxies.list.length === 0) return '';
   for (const k of keys) {
-    if (proxiesOf(form.proxies, k.id, ids).length === 0) return `No proxy is assigned to ${k.label}: it would connect without one. Give it a proxy.`;
+    const inPool = proxiesOf(form.proxies, k.id, ids).some((p) => p.pool);
+    if (!inPool && usesDefault(form, k.id, ids)) return `No proxy in the default route is assigned to ${k.label}: its relays would have no way out. Give it a proxy.`;
   }
   return '';
 }
