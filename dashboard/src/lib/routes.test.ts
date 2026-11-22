@@ -70,7 +70,8 @@ describe('resolve', () => {
       [LAN, 1, 'direct', 'rule'],
     ]);
     expect(table(s, 'invoices', pool, (id) => id !== 'vpn')[0]).toEqual([VPN, 2, { proxy: 'tor' }, 'fallback']);
-    expect(table(s, 'invoices', pool, (id) => id !== 'tor')[2]).toEqual([ONION, 0, 'off', 'proxy_down']);
+    // Its proxy down, a "stay offline" rule still goes through it (never another way).
+    expect(table(s, 'invoices', pool, (id) => id !== 'tor')[2]).toEqual([ONION, 0, { proxy: 'tor' }, 'rule']);
     expect(table(s, 'invoices', 'off', (id) => id !== 'vpn').slice(0, 2)).toEqual([
       [VPN, 2, 'off', 'pool_offline'],
       [PLAIN, -1, 'off', 'pool_offline'],
