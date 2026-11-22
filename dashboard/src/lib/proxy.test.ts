@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { NO_PROXY, buildProxy, editedUrl, isNew, move, newEntry, parseProxy, proxiesPatch, shortDuration, splitDuration, toSecs } from './proxy';
+import { I2P_PORT, NO_PROXY, buildProxy, editedUrl, i2pProxy, i2pRule, i2pRuleIndex, isNew, move, newEntry, parseProxy, proxiesPatch, registryProblem, shortDuration, splitDuration, toSecs } from './proxy';
 import { settings } from '../test-helpers';
 
 describe('proxy fields', () => {
@@ -97,5 +97,56 @@ describe('the proxy patch', () => {
   it('ignores the strategy intervals with fewer than two proxies, since the strategy is not applied', () => {
     const one = { ...live, list: [entry] };
     expect(proxiesPatch(one, { ...one, rotate_secs: NaN, chaos_min_secs: 900, chaos_max_secs: 300 })).toEqual({});
+  });
+});
+
+describe('the I2P router proxy', () => {
+  it('is an http:// proxy marked i2p', () => {
+    expect(parseProxy('http://127.0.0.1:4444', true)).toMatchObject({ kind: 'i2p', port: '4444' });
+    // Only an http:// proxy can be one.
+    expect(parseProxy('socks5://127.0.0.1:4447', true).kind).toBe('socks5');
+    expect(buildProxy({ ...NO_PROXY, kind: 'i2p', host: '127.0.0.1', port: I2P_PORT })).toEqual({ url: 'http://127.0.0.1:4444' });
+    // Turning a proxy into the I2P router keeps its hidden password.
+    expect(editedUrl('http://u:***@h:4444', { ...parseProxy('http://u:***@h:4444'), kind: 'i2p' })).toEqual({ url: 'http://u:***@h:4444' });
+  });
+
+  it('starts outside the default route and is sent with i2p', () => {
+    const e = newEntry('i2pd', 'http://127.0.0.1:4444', true);
+    expect(e).toMatchObject({ pool: false, i2p: true });
+    expect(newEntry('tor', 'socks5://h:1')).toMatchObject({ pool: true, i2p: false });
+    const live = settings().proxies;
+    const form = { ...live, list: [e, { id: 'p1', name: '', url: 'socks5://h:1', keys: [], pool: true, i2p: true }] };
+    expect((proxiesPatch(live, form) as { list: unknown[] }).list).toEqual([
+      { name: 'i2pd', url: 'http://127.0.0.1:4444', keys: [], pool: false, i2p: true },
+      { id: 'p1', name: '', url: 'socks5://h:1', keys: [], pool: true, i2p: true },
+    ]);
+    expect(i2pProxy(form)?.name).toBe('i2pd');
+    expect(i2pProxy(live)).toBeUndefined();
+  });
+
+  it('finds or makes the rule for .i2p relays', () => {
+    expect(i2pRule('p1')).toEqual({ name: '', match: ['*.i2p'], keys: [], to: { proxy: 'p1' }, fallback: 'offline' });
+    expect(i2pRuleIndex([i2pRule('a')])).toBe(0);
+    expect(i2pRuleIndex([{ ...i2pRule('a'), match: ['*.onion'] }])).toBe(-1);
+  });
+
+  it('checks registries like the service', () => {
+    const ok = 'http://notbob.i2p/cgi-bin/jump.cgi?q={name}';
+    expect(registryProblem(ok, [])).toBe('');
+    expect(registryProblem('http://reg.i2p?q={name}', [])).toBe('');
+    expect(registryProblem(ok, [ok])).toBe('That registry is already listed.');
+    expect(registryProblem('http://a.i2p/ q={name}', [])).toContain('no spaces');
+    expect(registryProblem(`http://a.i2p/${'x'.repeat(200)}{name}`, [])).toContain('200 characters');
+    expect(registryProblem('https://a.i2p/{name}', [])).toBe('A registry address starts with http://.');
+    for (const bad of ['http://a.i2p:80/{name}', 'http://A.i2p/{name}', 'http://u@a.i2p/{name}', 'http://example.com/{name}', 'http://.i2p/{name}']) {
+      expect(registryProblem(bad, []), bad).toContain('lowercase .i2p host');
+    }
+    expect(registryProblem('http://a.i2p/?q=', [])).toContain('{name}');
+  });
+
+  it('sends changed registries', () => {
+    const live = settings().proxies;
+    expect(proxiesPatch(live, { ...live })).toEqual({});
+    expect(proxiesPatch(live, { ...live, i2p_registries: [] })).toEqual({ i2p_registries: [] });
   });
 });

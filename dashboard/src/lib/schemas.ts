@@ -105,6 +105,21 @@ export const ProxyCheckSchema = z.strictObject({
 });
 export type ProxyCheck = z.infer<typeof ProxyCheckSchema>;
 
+const registry = z.string().max(200);
+
+/** An I2P name looked up through every registry, with which of them agree. */
+export const I2pLookupSchema = z.strictObject({
+  name: z.string().max(100),
+  address: z.string().regex(/^[a-z2-7]{52}\.b32\.i2p$/),
+  /** The first registry (in list order) that knew the name. */
+  registry,
+  agreeing: z.array(registry).max(4),
+  disagreeing: z.array(z.strictObject({ registry, address: z.string().max(100) })).max(4),
+  unknown: z.array(registry).max(4),
+  unreachable: z.array(registry).max(4),
+});
+export type I2pLookup = z.infer<typeof I2pLookupSchema>;
+
 /** One relay's end-to-end check: connects, carries ContextVM events, not rate-limiting. */
 export const RelayHealthSchema = z.strictObject({
   relay: z.string().max(200),
@@ -181,6 +196,8 @@ export const ProxyEntrySchema = z.strictObject({
   keys: keyIds,
   /** In the default route (the pool); otherwise used only by rules that name it. */
   pool: z.boolean(),
+  /** An I2P router's HTTP proxy, the one I2P names are looked up through (at most one). Left out is no. */
+  i2p: z.boolean().optional(),
 });
 export type ProxyEntry = z.infer<typeof ProxyEntrySchema>;
 
@@ -210,6 +227,8 @@ export const ProxySettingsSchema = z.strictObject({
   offline: OfflinePolicySchema,
   transparent: z.boolean(),
   rules: z.array(RuleSchema).max(16),
+  /** Where I2P names are looked up: `http://…i2p/…{name}…` addresses; empty turns lookups off. */
+  i2p_registries: z.array(z.string().max(200)).max(4),
 });
 export type ProxySettings = z.infer<typeof ProxySettingsSchema>;
 
@@ -376,6 +395,8 @@ export const SettingsSchema = z.strictObject({
   relays: z.array(z.string().max(200)).min(1).max(8),
   /** Relays only some keys use (relay address to key ids); the rest serve every key. */
   relay_keys: z.record(z.string().max(200), keyIds),
+  /** Names shown for relays (relay address to name), such as the I2P name a relay was looked up by. */
+  relay_names: z.record(z.string().max(200), text(60)),
   public_invoicing: z.boolean(),
   pow_bits: z.number().int().min(0).max(64),
   pow_window_secs: count,

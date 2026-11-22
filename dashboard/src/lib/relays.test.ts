@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { errorRate, isOverlayHost, relayProblem, statsFor } from './relays';
-import { relayHistory, relayStats } from '../test-helpers';
+import { errorRate, i2pName, isOverlayHost, lookupLine, registryHost, relayProblem, statsFor, withHost } from './relays';
+import { B32, REGISTRIES, i2pLookup, relayHistory, relayStats } from '../test-helpers';
 
 describe('relay history helpers', () => {
   it('match a relay by address, with or without a trailing slash', () => {
@@ -53,5 +53,28 @@ describe('relayProblem', () => {
     bad('ws://127.0.0.1:80@evil.example', /user name or password/);
     expect(isOverlayHost('a.onion')).toBe(true);
     expect(isOverlayHost('onion')).toBe(false);
+  });
+});
+
+describe('I2P names', () => {
+  it('reads a name from a relay address, not a b32 address', () => {
+    expect(i2pName(' ws://Nostr-Not.i2p:7777/path ')).toBe('nostr-not.i2p');
+    expect(i2pName(`ws://${B32}`)).toBeNull();
+    expect(i2pName('wss://relay.example')).toBeNull();
+    expect(i2pName('nostr-not.i2p')).toBeNull();
+  });
+
+  it('swaps the host and keeps the rest', () => {
+    expect(withHost('ws://nostr-not.i2p:7777/a?b', B32)).toBe(`ws://${B32}:7777/a?b`);
+    expect(withHost(' wss://nostr-not.i2p ', B32)).toBe(`wss://${B32}`);
+  });
+
+  it('says what a lookup found in one line', () => {
+    expect(registryHost(REGISTRIES[0])).toBe('notbob.i2p');
+    expect(registryHost('http://reg.i2p?q={name}')).toBe('reg.i2p');
+    expect(lookupLine(i2pLookup())).toBe(`nostr-not.i2p → ${B32} (from notbob.i2p; stats.i2p doesn't know it)`);
+    expect(lookupLine(i2pLookup({ agreeing: REGISTRIES, unknown: [] }))).toBe(`nostr-not.i2p → ${B32} (from notbob.i2p and stats.i2p)`);
+    const three = ['http://a.i2p/{name}', 'http://b.i2p/{name}', 'http://c.i2p/{name}'];
+    expect(lookupLine(i2pLookup({ unknown: three }))).toContain('a.i2p, b.i2p and c.i2p don\'t know it');
   });
 });
