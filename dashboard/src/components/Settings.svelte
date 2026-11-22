@@ -3,7 +3,7 @@
   import { ADMIN, assignmentProblem, dependents, proxiesOf, relayKeysFor, relayKeysText, relayUsers, relaysOf, replacements, toggled } from '../lib/keys';
   import { proxiesPatch } from '../lib/proxy';
   import type { Health, RelayHistory, Settings, SettingsView } from '../lib/schemas';
-  import { errorRate, statsFor } from '../lib/relays';
+  import { errorRate, relayProblem, statsFor } from '../lib/relays';
   import KeyChips from './KeyChips.svelte';
   import ProxyPool from './ProxyPool.svelte';
   import Warnings from './Warnings.svelte';
@@ -57,6 +57,8 @@
   let view = $state<SettingsView | null>(null);
   let form = $state<Settings | null>(null);
   let newRelay = $state('');
+  // Why the relay being added was refused, shown beside the box it was typed in.
+  let relayError = $state('');
   let error = $state('');
   let notice = $state('');
   let busy = $state(false);
@@ -141,15 +143,8 @@
 
   function addRelay() {
     const url = newRelay.trim();
-    if (!/^wss?:\/\/[^\s]+$/.test(url)) {
-      error = 'A relay address starts with wss:// (or ws:// for a relay on this machine).';
-      return;
-    }
-    if (form!.relays.includes(url)) {
-      error = 'That relay is already listed.';
-      return;
-    }
-    error = '';
+    relayError = relayProblem(url, view!.fixed.network, form!.relays);
+    if (relayError !== '') return;
     form!.relays = [...form!.relays, url];
     newRelay = '';
   }
@@ -292,12 +287,15 @@
           </ul>
           <div class="add-relay">
             <label class="visually-hidden" for="relay">Add relay</label>
-            <input id="relay" class="mono" placeholder="wss://relay.example.com" bind:value={newRelay} />
+            <input id="relay" class="mono" placeholder="wss://relay.example.com" aria-invalid={relayError !== ''} aria-describedby={relayError !== '' ? 'relay-error' : undefined} bind:value={newRelay} oninput={() => (relayError = '')} />
             <button type="button" onclick={addRelay} disabled={form.relays.length >= 8}>Add</button>
           </div>
+          {#if relayError !== ''}<p id="relay-error" class="field-error" role="alert">{relayError}</p>{/if}
           <p class="hint">
-            On mainnet only <span class="mono">wss://</span> relays, unless the relay is on this machine. Saving reconnects: if no relay connects, the previous
-            list comes back. If none stays connected for 10 minutes later on, the service goes back to <span class="mono">DEADHOP_RELAYS</span> by itself.
+            On mainnet relays use <span class="mono">wss://</span>. Plain <span class="mono">ws://</span> is for a relay on this machine, or on Tor
+            (<span class="mono">.onion</span>), I2P (<span class="mono">.i2p</span>) or FIPS (<span class="mono">.fips</span>), which encrypt the connection
+            themselves. Those need a proxy that can reach them. Saving reconnects: if no relay connects, the previous list comes back. If none stays connected for
+            10 minutes later on, the service goes back to <span class="mono">DEADHOP_RELAYS</span> by itself.
           </p>
           {#if unreachable}
             <p class="error" role="alert">
@@ -442,8 +440,10 @@
     <div class="save-bar">
       <div class="save-inner">
         {#if pending.count > 0}<span class="badge detected">{`${pending.count} change${pending.count === 1 ? '' : 's'}`}</span>{/if}
-        <span class="save-text">
-          {pending.problem !== ''
+        <span class="save-text" class:failed={error !== ''}>
+          {error !== ''
+            ? `Not saved. ${error}`
+            : pending.problem !== ''
             ? pending.problem
             : pending.count === 0
               ? 'No unsaved changes.'

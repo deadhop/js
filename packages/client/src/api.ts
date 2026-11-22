@@ -58,11 +58,27 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Why the service refused a request, in its own words ("relay 'x' must use
+ * wss:// on mainnet"). It sends this for invalid parameters only, and only
+ * text written for the caller. Undefined when it sent none.
+ */
+function reasonOf(e: unknown): string | undefined {
+  const message = (e as { message?: unknown } | null)?.message;
+  if (typeof message !== 'string') return undefined;
+  const reason = message
+    .replace(/^MCP error -?\d+:\s*/, '')
+    .replace(/^invalid parameters:\s*/, '')
+    .trim();
+  return reason === '' ? undefined : reason.slice(0, 300);
+}
+
 /** Map anything thrown by the transport or the service to an `ApiError`. */
 export function toApiError(e: unknown): ApiError {
   if (e instanceof ApiError) return e;
   if (e instanceof PowError) return new ApiError('pow_failed', e.message);
   const code = (e as { data?: { code?: unknown } } | null)?.data?.code;
+  if (code === 'invalid_params') return new ApiError('invalid_params', reasonOf(e));
   if (typeof code === 'string' && SERVER_CODES.includes(code)) return new ApiError(code as ErrorCode);
   return new ApiError('network');
 }
