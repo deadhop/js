@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { PayApi, SettingsPatch } from '../lib/api';
-  import { ADMIN, assignmentProblem, proxiesOf, relayKeysFor, relayKeysText, relayUsers, relaysOf, toggled } from '../lib/keys';
+  import { ADMIN, assignmentProblem, dependents, proxiesOf, relayKeysFor, relayKeysText, relayUsers, relaysOf, replacements, toggled } from '../lib/keys';
   import { proxiesPatch } from '../lib/proxy';
   import type { Health, RelayHistory, Settings, SettingsView } from '../lib/schemas';
   import { errorRate, statsFor } from '../lib/relays';
@@ -13,12 +13,15 @@
     dashboardRelays,
     onChanged,
     confirm = (message: string) => window.confirm(message),
+    showSweep = false,
   }: {
     api: PayApi;
     /** Relays this page itself uses (from config.json). */
     dashboardRelays: string[];
     onChanged: () => void;
     confirm?: (message: string) => boolean;
+    /** The PayJoin / CoinJoin sweep card; off until the sweep is implemented. */
+    showSweep?: boolean;
   } = $props();
 
   // A day of relay results, for the error rate beside each relay; optional here.
@@ -146,9 +149,41 @@
     newRelay = '';
   }
 
+  // Removing a relay that a key depends on first asks which relay takes over.
+  let replacing = $state<{ url: string; picks: Record<string, string> } | null>(null);
+  let replaceDialog = $state<HTMLDialogElement | null>(null);
+
   function removeRelay(url: string) {
-    form!.relays = form!.relays.filter((r) => r !== url);
+    const needed = dependents(form!.relays, form!.relay_keys, url, ids, dashboardRelays);
+    if (needed.length === 0) {
+      dropRelay(url);
+      return;
+    }
+    replacing = { url, picks: Object.fromEntries(needed.map((k) => [k, replacements(form!.relays, url, k, dashboardRelays)[0] ?? ''])) };
+    queueMicrotask(() => replaceDialog?.showModal?.());
   }
+
+  function dropRelay(url: string) {
+    form!.relays = form!.relays.filter((r) => r !== url);
+    form!.relay_keys = relayKeysFor(form!.relays, form!.relay_keys, ids);
+  }
+
+  function replaceAndRemove() {
+    const r = replacing!;
+    for (const [key, to] of Object.entries(r.picks)) {
+      if (!form!.relays.includes(to)) form!.relays = [...form!.relays, to];
+      useRelay(to, key, true);
+    }
+    dropRelay(r.url);
+    closeReplace();
+  }
+
+  function closeReplace() {
+    replaceDialog?.close();
+    replacing = null;
+  }
+
+  const keyLabel = (id: string) => keys.find((k) => k.id === id)!.label;
 
   /** Switch one key on or off for a relay. */
   function useRelay(url: string, id: string, on: boolean) {
@@ -220,15 +255,22 @@
         <span class="field-title">Relays</span>
         <ul class="plain relay-edit">
           {#each form.relays as r (r)}
-                        {@const st = statsFor(history, r)}
+            {@const st = statsFor(history, r)}
             <li>
-              <code class="field-box">{r}</code>
-              <KeyChips {keys} assigned={relayUsers(form.relay_keys, r, ids)} label={r} onchange={(id, on) => useRelay(r, id, on)} />
-              <button type="button" onclick={() => removeRelay(r)} disabled={form.relays.length === 1} aria-label={`Remove ${r}`}>Remove</button>
+              <code class="relay-url mono">{r}</code>
               {#if st}
                 {@const rate = errorRate(st)}
                 <span class={`rate-chip ${rate.tone}`} title="Failed health checks and replies, last 24 hours">{`${rate.text} errors · 24 h`}</span>
               {/if}
+              <KeyChips
+                {keys}
+                assigned={relayUsers(form.relay_keys, r, ids)}
+                required={dependents(form.relays, form.relay_keys, r, ids, dashboardRelays)}
+                requiredWhy="its only relay, or the only one this page connects through, so it stays on."
+                label={r}
+                onchange={(id, on) => useRelay(r, id, on)}
+              />
+              <button type="button" class="sm remove" onclick={() => removeRelay(r)} disabled={form.relays.length === 1} aria-label={`Remove ${r}`}>Remove</button>
             </li>
           {/each}
         </ul>
@@ -329,35 +371,38 @@
       </div>
     </section>
 
-    <section class="card" aria-labelledby="s-sweep">
-      <h2 id="s-sweep">PayJoin / CoinJoin sweep</h2>
-      <p class="hint">
-        The policy for moving funds out once they pile up. This service holds no spending keys and never sends anything: a separate signer reads the policy
-        and chooses the destination itself.
-      </p>
-      <div class="grid2">
-        <div class="field">
-          <label for="sweep-mode">Method</label>
-          <select id="sweep-mode" bind:value={form.sweep.mode}>
-            <option value="payjoin">PayJoin</option>
-            <option value="coinjoin">CoinJoin</option>
-          </select>
+    <!-- The sweep is not implemented yet: hidden until it is (its settings still round-trip). -->
+    {#if showSweep}
+      <section class="card" aria-labelledby="s-sweep">
+        <h2 id="s-sweep">PayJoin / CoinJoin sweep</h2>
+        <p class="hint">
+          The policy for moving funds out once they pile up. This service holds no spending keys and never sends anything: a separate signer reads the policy
+          and chooses the destination itself.
+        </p>
+        <div class="grid2">
+          <div class="field">
+            <label for="sweep-mode">Method</label>
+            <select id="sweep-mode" bind:value={form.sweep.mode}>
+              <option value="payjoin">PayJoin</option>
+              <option value="coinjoin">CoinJoin</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="sweep-threshold">Threshold (sats)</label>
+            <input id="sweep-threshold" type="number" min="10000" bind:value={form.sweep.threshold_sat} />
+          </div>
+          <div class="field">
+            <label for="sweep-fee">Highest fee rate (sat/vB)</label>
+            <input id="sweep-fee" type="number" min="1" max="1000" bind:value={form.sweep.max_fee_rate_sat_vb} />
+          </div>
+          <div class="field">
+            <label for="sweep-anon">Smallest CoinJoin anonymity set</label>
+            <input id="sweep-anon" type="number" min="2" max="1000" bind:value={form.sweep.min_anonymity_set} />
+          </div>
         </div>
-        <div class="field">
-          <label for="sweep-threshold">Threshold (sats)</label>
-          <input id="sweep-threshold" type="number" min="10000" bind:value={form.sweep.threshold_sat} />
-        </div>
-        <div class="field">
-          <label for="sweep-fee">Highest fee rate (sat/vB)</label>
-          <input id="sweep-fee" type="number" min="1" max="1000" bind:value={form.sweep.max_fee_rate_sat_vb} />
-        </div>
-        <div class="field">
-          <label for="sweep-anon">Smallest CoinJoin anonymity set</label>
-          <input id="sweep-anon" type="number" min="2" max="1000" bind:value={form.sweep.min_anonymity_set} />
-        </div>
-      </div>
-      <label class="check"><input id="sweep-on" type="checkbox" bind:checked={form.sweep.enabled} /> Enabled</label>
-    </section>
+        <label class="check"><input id="sweep-on" type="checkbox" bind:checked={form.sweep.enabled} /> Enabled</label>
+      </section>
+    {/if}
 
     <section class="card host-only" aria-labelledby="s-host">
       <div class="card-head">
@@ -394,4 +439,41 @@
       </div>
     </div>
   </form>
+
+  <dialog class="replace-relay" bind:this={replaceDialog} aria-labelledby="replace-title" oncancel={closeReplace}>
+    {#if replacing}
+      {@const r = replacing}
+      {@const listed = form.relays}
+      <!-- Only the administration key can be left without a choice: this page's own relays are the only ones it may move to. -->
+      {#if Object.keys(r.picks).some((k) => replacements(listed, r.url, k, dashboardRelays).length === 0)}
+        <h2 id="replace-title"><span class="mono">{r.url}</span> cannot be removed</h2>
+        <p class="replace-why">{`This page connects only through ${r.url}, so removing it would lock you out. Add another relay to this page's config.json first.`}</p>
+        <div class="test-row">
+          <button type="button" onclick={closeReplace}>Close</button>
+        </div>
+      {:else}
+        <h2 id="replace-title">Replace <span class="mono">{r.url}</span></h2>
+        {#each Object.keys(r.picks) as key (key)}
+          <fieldset class="replace-key">
+            <legend>
+              {key === ADMIN && dashboardRelays.includes(r.url)
+                ? `${keyLabel(key)} needs a relay that this page connects through. Choose which one takes over.`
+                : `${keyLabel(key)} has no other relay. Choose which one takes over.`}
+            </legend>
+            {#each replacements(form.relays, r.url, key, dashboardRelays) as o (o)}
+              <label class="replace-option">
+                <input type="radio" name={`replace-${key}`} value={o} checked={r.picks[key] === o} onchange={() => (r.picks[key] = o)} />
+                <span class="mono">{o}</span>
+                {#if !form.relays.includes(o)}<span class="hint inline">not listed: it will be added</span>{/if}
+              </label>
+            {/each}
+          </fieldset>
+        {/each}
+        <div class="test-row">
+          <button type="button" class="primary" onclick={replaceAndRemove}>Replace and remove</button>
+          <button type="button" onclick={closeReplace}>Keep the relay</button>
+        </div>
+      {/if}
+    {/if}
+  </dialog>
 {/if}

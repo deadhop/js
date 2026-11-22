@@ -126,10 +126,10 @@ describe.skipIf(!existsSync(chrome) || binary === null)('proxy pool in a real br
     await shot('12-strategy-offline', await section());
   }, 420_000);
 
-  it('greys the whole section out for a transparent proxy', async () => {
+  it('hides the list and strategy for a transparent proxy', async () => {
     await page.click('.transparent-toggle input');
     await hasText(page, 'The service trusts it and checks nothing');
-    await shot('13-transparent-greyed-out', await section());
+    await shot('13-transparent-hidden', await section());
     await button(page, 'Save changes');
     await hasText(page, 'No unsaved changes.');
     await button(page, 'Overview');
