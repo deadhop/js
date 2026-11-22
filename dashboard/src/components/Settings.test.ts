@@ -1,3 +1,4 @@
+import type { RelayHealth } from '../lib/schemas';
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import Settings from './Settings.svelte';
@@ -250,7 +251,7 @@ describe('Settings', () => {
   });
 
   it('shows each relay\'s last check, and tests them all again on request', async () => {
-    const check = (relay: string, over: Record<string, unknown>) => ({ relay, status: 'ok', connects: true, forwards: true, rate_limited: false, ms: 120, detail: '', checked_at: 1, ...over });
+    const check = (relay: string, over: Partial<RelayHealth>): RelayHealth => ({ relay, status: 'ok', connects: true, forwards: true, rate_limited: false, ms: 120, detail: '', checked_at: 1, ...over });
     const relays = ['ws://127.0.0.1:7777', 'wss://b.example', 'wss://c.example'];
     const before = health({
       relay_health: [

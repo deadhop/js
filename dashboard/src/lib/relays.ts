@@ -1,5 +1,5 @@
 // Helpers for the relay history: windows, matching a relay by address, error rates.
-import type { RelayHistory, RelayStats } from './schemas';
+import type { I2pLookup, RelayHistory, RelayStats } from './schemas';
 
 export type HistoryWindow = RelayHistory['window'];
 
@@ -66,4 +66,31 @@ export function relayProblem(url: string, network: string, listed: string[]): st
   }
   if (listed.some((r) => bare(r) === bare(url))) return 'That relay is already listed.';
   return '';
+}
+
+const HOST = /^(wss?:\/\/)([^/:?#]+)(.*)$/;
+
+/**
+ * The I2P name in a relay address (`ws://nostr-not.i2p` gives `nostr-not.i2p`),
+ * or null when its host is not one: a `.b32.i2p` address is not a name.
+ */
+export function i2pName(url: string): string | null {
+  const host = HOST.exec(url.trim())?.[2].toLowerCase() ?? '';
+  return host.endsWith('.i2p') && !host.endsWith('.b32.i2p') ? host : null;
+}
+
+/** The relay address with another host; the scheme, port and path stay. */
+export const withHost = (url: string, host: string) => url.trim().replace(HOST, (_, scheme: string, _host: string, rest: string) => `${scheme}${host}${rest}`);
+
+/** A registry address as its host: `http://notbob.i2p/cgi-bin/…` is `notbob.i2p`. */
+export const registryHost = (r: string) => r.replace(/^http:\/\//, '').split(/[/?]/)[0];
+
+const listOf = (hosts: string[]) => (hosts.length < 2 ? hosts.join('') : `${hosts.slice(0, -1).join(', ')} and ${hosts[hosts.length - 1]}`);
+
+/** What a lookup found, in one line: `nostr-not.i2p → <b32> (from notbob.i2p; stats.i2p doesn't know it)`. */
+export function lookupLine(l: I2pLookup): string {
+  const from = l.agreeing.map(registryHost);
+  const unknown = l.unknown.map(registryHost);
+  const notes = [`from ${listOf(from)}`, ...(unknown.length === 0 ? [] : [`${listOf(unknown)} ${unknown.length === 1 ? "doesn't" : "don't"} know it`])];
+  return `${l.name} → ${l.address} (${notes.join('; ')})`;
 }

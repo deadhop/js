@@ -40,6 +40,8 @@ import {
   type WipeResult,
   PrivacyAuditSchema,
   ProxyCheckSchema,
+  I2pLookupSchema,
+  type I2pLookup,
   RelayHealthReportSchema,
   RelayHistorySchema,
   type RelayHealthReport,
@@ -72,12 +74,17 @@ export interface ProxyInput {
   keys?: string[];
   /** In the default route; left out is yes. */
   pool?: boolean;
+  /** An I2P router's HTTP proxy; left out is no. */
+  i2p?: boolean;
 }
 
 /** Changes to the proxy settings; `list` replaces the whole list. */
 export interface ProxiesPatch extends Partial<Omit<Settings['proxies'], 'list'>> {
   list?: ProxyInput[];
 }
+
+/** How long an I2P name lookup may take: the service gives registries 90 seconds. */
+export const LOOKUP_TIMEOUT_MS = 120_000;
 
 export type ControlAction = 'stop' | 'start' | 'restart';
 
@@ -157,6 +164,14 @@ export class PayApi extends InvoiceApi {
   checkProxy(target?: string | { id: string }): Promise<ProxyCheck> {
     const params = target === undefined ? {} : typeof target === 'string' ? { proxy: target } : { id: target.id };
     return this.call('check_proxy', params, ProxyCheckSchema);
+  }
+
+  /**
+   * Look up an I2P name (`example.i2p`) through the I2P router proxy, asking
+   * every registry. It can take up to a minute and a half.
+   */
+  resolveI2pName(name: string): Promise<I2pLookup> {
+    return this.call('resolve_i2p_name', { name }, I2pLookupSchema, LOOKUP_TIMEOUT_MS);
   }
 
   /** Check every live relay end to end now. */

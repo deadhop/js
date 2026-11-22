@@ -2,8 +2,8 @@
   import type { PayApi, SettingsPatch } from '../lib/api';
   import { ADMIN, assignmentProblem, dependents, proxiesOf, relayKeysFor, relayKeysText, relayUsers, relaysOf, replacements, toggled } from '../lib/keys';
   import { proxiesPatch } from '../lib/proxy';
-  import type { Health, RelayHealth, RelayHistory, Settings, SettingsView } from '../lib/schemas';
-  import { errorRate, relayProblem, statsFor } from '../lib/relays';
+  import type { Health, I2pLookup, RelayHealth, RelayHistory, Settings, SettingsView } from '../lib/schemas';
+  import { errorRate, i2pName, lookupLine, registryHost, relayProblem, statsFor, withHost } from '../lib/relays';
   import { REASONS, destination, firstRule, proxyName, rulesProblem } from '../lib/routes';
   import { mapRows, trace } from '../lib/routeview';
   import KeyChips from './KeyChips.svelte';
@@ -136,11 +136,14 @@
     const f = form!;
     const patch: Record<string, unknown> = {};
     for (const key of Object.keys(f) as (keyof Settings)[]) {
-      if (key === 'sweep' || key === 'relays' || key === 'relay_keys' || key === 'proxies') continue;
+      if (key === 'sweep' || key === 'relays' || key === 'relay_keys' || key === 'relay_names' || key === 'proxies') continue;
       if (f[key] === null) return 'Fill in every number.';
       if (f[key] !== live[key]) patch[key] = f[key];
     }
     if (JSON.stringify(f.relays) !== JSON.stringify(live.relays)) patch.relays = [...f.relays];
+    // Names only change what is shown: they never reconnect.
+    const names = (m: Record<string, string>) => JSON.stringify(Object.entries(m).sort());
+    if (names(f.relay_names) !== names(live.relay_names)) patch.relay_names = { ...f.relay_names };
     // Which keys use which relays: only the restricted relays are saved.
     const problem = assignmentProblem(keys, f) || rulesProblem(f, keys, live.proxies.list, dashboardRelays);
     if (problem !== '') return problem;
@@ -186,8 +189,73 @@
     const url = newRelay.trim();
     relayError = relayProblem(url, view!.fixed.network, form!.relays);
     if (relayError !== '') return;
+    if (typedName !== null) {
+      void lookUpRelay(url, typedName);
+      return;
+    }
     form!.relays = [...form!.relays, url];
     newRelay = '';
+  }
+
+  // ---- I2P names ----
+  // With an I2P router proxy saved, a relay typed by its .i2p name is looked up
+  // once, through public registries, and added under the .b32.i2p address found.
+  const routerSaved = $derived(view !== null && view.settings.proxies.list.some((e) => e.i2p === true));
+  const typedName = $derived(routerSaved ? i2pName(newRelay) : null);
+  /** The lookup for the relay being added. */
+  let found = $state<{ url: string; result: I2pLookup } | null>(null);
+  let looking = $state(false);
+
+  async function lookUpRelay(url: string, name: string) {
+    looking = true;
+    found = null;
+    try {
+      found = { url, result: await api.resolveI2pName(name) };
+    } catch (e) {
+      relayError = (e as Error).message;
+    } finally {
+      looking = false;
+    }
+  }
+
+  function addFound() {
+    const f = found!;
+    const url = withHost(f.url, f.result.address);
+    relayError = relayProblem(url, view!.fixed.network, form!.relays);
+    if (relayError !== '') return;
+    form!.relays = [...form!.relays, url];
+    form!.relay_names = { ...form!.relay_names, [url]: f.result.name };
+    newRelay = '';
+    found = null;
+  }
+
+  /** A named relay looked up again. */
+  let again = $state<{ relay: string; result: I2pLookup | null; error: string } | null>(null);
+
+  async function lookUpAgain(relay: string, name: string) {
+    again = { relay, result: null, error: '' };
+    try {
+      again = { relay, result: await api.resolveI2pName(name), error: '' };
+    } catch (e) {
+      again = { relay, result: null, error: (e as Error).message };
+    }
+  }
+
+  /** Move a relay to a new address: its keys, its name and the rules that name it go along. */
+  function moveRelay(from: string, to: string, name: string) {
+    const problem = relayProblem(to, view!.fixed.network, form!.relays);
+    if (problem !== '') {
+      again = { ...again!, error: problem };
+      return;
+    }
+    if (!confirm(`Replace ${from} with ${to}? Its keys, name and rules move to the new address.`)) return;
+    const f = form!;
+    const renamed = <T,>(m: Record<string, T>) => Object.fromEntries(Object.entries(m).map(([k, v]) => [k === from ? to : k, v]));
+    f.relays = f.relays.map((r) => (r === from ? to : r));
+    f.relay_keys = renamed(f.relay_keys);
+    f.relay_names = { ...renamed(f.relay_names), [to]: name };
+    f.proxies.rules = f.proxies.rules.map((r) => ({ ...r, match: r.match.map((m) => (m === from ? to : m)) }));
+    again = null;
   }
 
   // Removing a relay that a key depends on first asks which relay takes over.
@@ -207,6 +275,7 @@
   function dropRelay(url: string) {
     form!.relays = form!.relays.filter((r) => r !== url);
     form!.relay_keys = relayKeysFor(form!.relays, form!.relay_keys, ids);
+    form!.relay_names = Object.fromEntries(Object.entries(form!.relay_names).filter(([r]) => r !== url));
   }
 
   function replaceAndRemove() {
@@ -250,6 +319,16 @@
   });
 
 </script>
+
+{#snippet lookupResult(l: I2pLookup)}
+  <p class="i2p-line"><span class="mono">{lookupLine(l)}</span></p>
+  {#if l.disagreeing.length > 0}
+    <p class="i2p-warning" role="alert">
+      {`Registries disagree: ${l.disagreeing.map((d) => `${registryHost(d.registry)} gives ${d.address}`).join('; ')}. One of them may point to someone else's relay. Check the address with the relay's operator before you use it.`}
+    </p>
+  {/if}
+  {#if l.unreachable.length > 0}<p class="hint">{`Not reached: ${l.unreachable.map(registryHost).join(', ')}.`}</p>{/if}
+{/snippet}
 
 {#snippet mark(name: string)}{#if isOverridden(name)}<span>{' *'}</span>{/if}{/snippet}
 
@@ -325,8 +404,13 @@
               {@const st = statsFor(history, r)}
               {@const check = health?.relay_health.find((c) => c.relay.replace(/\/$/, '') === r.replace(/\/$/, ''))}
               {@const routes = mapRows((health?.proxy_pool.routes ?? []).filter((x) => x.relay === r), null)}
+              {@const name = form.relay_names[r]}
               <li>
-                <code class="relay-url mono">{r}</code>
+                {#if name}
+                  <span class="relay-url relay-named"><strong>{name}</strong><code class="mono">{r}</code></span>
+                {:else}
+                  <code class="relay-url mono">{r}</code>
+                {/if}
                 {#if st}
                   {@const rate = errorRate(st)}
                   <span class={`rate-chip ${rate.tone}`} title="Failed health checks and replies, last 24 hours">{`${rate.text} errors · 24 h`}</span>
@@ -346,6 +430,9 @@
                   <span class="via-pill"><span class="via-dot"></span>Differs per key</span>
                 {/if}
                 <button type="button" class="sm" aria-expanded={why === r} aria-label={`Why ${r} goes this way`} onclick={() => (why = why === r ? null : r)}>Why</button>
+                {#if name && routerSaved}
+                  <button type="button" class="sm" aria-label={`Look up ${name} again`} disabled={again?.relay === r && again.result === null && again.error === ''} onclick={() => void lookUpAgain(r, name)}>Look up again</button>
+                {/if}
                 <button type="button" class="sm remove" onclick={() => removeRelay(r)} disabled={form.relays.length === 1} aria-label={`Remove ${r}`}>Remove</button>
                 {#if check}
                   <span class={`relay-check ${check.status}`} role="status" aria-label={`${r}: last check`}>
@@ -353,6 +440,29 @@
                     <span>{checkLine(check)}</span>
                     {#if check.status !== 'ok' && check.detail !== ''}<span class="relay-check-why">{check.detail}</span>{/if}
                   </span>
+                {/if}
+                {#if again?.relay === r}
+                  {@const a = again}
+                  <div class="i2p-found" role="region" aria-label={`Lookup of ${name}`}>
+                    {#if a.error !== ''}
+                      <p class="field-error" role="alert">{a.error}</p>
+                    {:else if a.result === null}
+                      <p class="hint" role="status">{`Asking the registries about ${name}. This can take a minute.`}</p>
+                    {:else}
+                      {@render lookupResult(a.result)}
+                      {#if withHost(r, a.result.address) === r}
+                        <p class="note">The address has not changed.</p>
+                      {:else}
+                        <p class="field-error" role="alert">{`The address has changed. The relay is saved as ${r}.`}</p>
+                      {/if}
+                    {/if}
+                    <div class="test-row">
+                      {#if a.result !== null && withHost(r, a.result.address) !== r}
+                        <button type="button" class="sm primary" onclick={() => moveRelay(r, withHost(r, a.result!.address), a.result!.name)}>Use the new address</button>
+                      {/if}
+                      <button type="button" class="sm" onclick={() => (again = null)}>Close</button>
+                    </div>
+                  </div>
                 {/if}
                 {#if why === r}
                   <div class="relay-why" role="region" aria-label={`Why ${r} goes this way`}>
@@ -379,10 +489,31 @@
           </ul>
           <div class="add-relay">
             <label class="visually-hidden" for="relay">Add relay</label>
-            <input id="relay" class="mono" placeholder="wss://relay.example.com" aria-invalid={relayError !== ''} aria-describedby={relayError !== '' ? 'relay-error' : undefined} bind:value={newRelay} oninput={() => (relayError = '')} />
-            <button type="button" onclick={addRelay} disabled={form.relays.length >= 8}>Add</button>
+            <input
+              id="relay"
+              class="mono"
+              placeholder="wss://relay.example.com"
+              aria-invalid={relayError !== ''}
+              aria-describedby={relayError !== '' ? 'relay-error' : undefined}
+              bind:value={newRelay}
+              oninput={() => {
+                relayError = '';
+                found = null;
+              }}
+            />
+            <button type="button" onclick={addRelay} disabled={form.relays.length >= 8 || looking}>{typedName === null ? 'Add' : looking ? 'Looking up…' : 'Look up'}</button>
           </div>
           {#if relayError !== ''}<p id="relay-error" class="field-error" role="alert">{relayError}</p>{/if}
+          {#if looking}<p class="hint" role="status">Asking the I2P name registries through your I2P router. This can take a minute.</p>{/if}
+          {#if found}
+            <div class="i2p-found" role="region" aria-label="Lookup result">
+              {@render lookupResult(found.result)}
+              <div class="test-row">
+                <button type="button" class="sm primary" onclick={addFound}>Add as this address</button>
+                <button type="button" class="sm" onclick={() => (found = null)}>Cancel</button>
+              </div>
+            </div>
+          {/if}
           {#if relayError === '' && /^wss?:\/\/\S+$/.test(newRelay.trim())}
             {@const url = newRelay.trim()}
             {@const lines = keys.map((k) => {
