@@ -118,6 +118,9 @@ export function proxiesPatch(live: ProxySettings, form: ProxySettings): ProxiesP
   if (form.mode !== live.mode) patch.mode = form.mode;
   if (form.offline !== live.offline) patch.offline = form.offline;
   if (form.transparent !== live.transparent) patch.transparent = form.transparent;
+  // With fewer than two proxies the strategy is hidden and not applied, so its
+  // intervals are neither checked nor sent.
+  if (form.list.length < 2) return patch;
   for (const k of ['rotate_secs', 'chaos_min_secs', 'chaos_max_secs'] as const) {
     const v = form[k];
     if (!Number.isInteger(v)) return 'Fill in every interval.';

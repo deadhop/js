@@ -4,8 +4,16 @@ import Settings from './Settings.svelte';
 import type { PayApi } from '../lib/api';
 import { health, proxyCheck, relayHistory, relayStats, settings, settingsView } from '../test-helpers';
 
+// jsdom has <dialog> but not its modal methods.
+HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) {
+  this.open = true;
+};
+HTMLDialogElement.prototype.close ??= function (this: HTMLDialogElement) {
+  this.open = false;
+};
 
-function setup(view = settingsView(), over: Record<string, ReturnType<typeof vi.fn>> = {}, answer = true) {
+
+function setup(view = settingsView(), over: Record<string, ReturnType<typeof vi.fn>> = {}, answer = true, dashboardRelays = ['ws://127.0.0.1:7777']) {
   const api = {
     getSettings: vi.fn().mockResolvedValue(view),
     updateSettings: vi.fn().mockResolvedValue(view),
@@ -19,7 +27,7 @@ function setup(view = settingsView(), over: Record<string, ReturnType<typeof vi.
   };
   const onChanged = vi.fn();
   const confirm = vi.fn().mockReturnValue(answer);
-  render(Settings, { props: { api: api as unknown as PayApi, dashboardRelays: ['ws://127.0.0.1:7777'], onChanged, confirm } });
+  render(Settings, { props: { api: api as unknown as PayApi, dashboardRelays, onChanged, confirm, showSweep: true } });
   return { ...api, onChanged, confirm };
 }
 
@@ -149,7 +157,7 @@ describe('Settings', () => {
     expect(t.updateSettings).not.toHaveBeenCalled();
   });
 
-  it('adds and removes relays, warns about cutting this page off, and asks before reconnecting', async () => {
+  it('adds relays, and will not remove the one this page connects through', async () => {
     const t = setup(settingsView(), {}, false);
     await screen.findByText('ws://127.0.0.1:7777');
     expect((screen.getByRole('button', { name: 'Remove ws://127.0.0.1:7777' }) as HTMLButtonElement).disabled).toBe(true);
@@ -163,23 +171,83 @@ describe('Settings', () => {
     await fireEvent.input(add, { target: { value: 'wss://relay.example' } });
     await fireEvent.click(screen.getByRole('button', { name: 'Add' }));
     expect(screen.queryByRole('alert')).toBeNull();
+
+    // Administration cannot be switched off on the only relay this page uses.
+    expect((screen.getByLabelText('ws://127.0.0.1:7777 used by Administration') as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByLabelText('wss://relay.example used by Administration') as HTMLInputElement).disabled).toBe(false);
+
+    // Removing it asks for a replacement, and there is none this page could use.
     await fireEvent.click(screen.getByRole('button', { name: 'Remove ws://127.0.0.1:7777' }));
-    expect(screen.getByRole('alert').textContent).toContain('This page signs in through the administration key, over ws://127.0.0.1:7777');
+    expect(screen.getByText(/cannot be removed/)).toBeTruthy();
+    expect(screen.getByText(/would lock you out/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Replace and remove' })).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(screen.queryByText(/would lock you out/)).toBeNull();
+    expect(screen.getByText('ws://127.0.0.1:7777')).toBeTruthy();
+
     await save();
-    // Not a block: it asks, and the answer decides.
-    expect(t.confirm).toHaveBeenCalledWith(expect.stringContaining('would no longer use any of them'));
+    expect(t.confirm).toHaveBeenCalledWith(expect.stringContaining('reconnect'));
     expect(t.updateSettings).not.toHaveBeenCalled();
   });
 
-  it('asks twice when saving cuts this page off and reconnects, and saves when both are accepted', async () => {
-    const t = setup(settingsView(), {}, true);
+  it("asks which relay takes over when a key's only relay is removed, and moves the key there", async () => {
+    const t = setup(
+      settingsView({
+        settings: settings({ relays: ['ws://127.0.0.1:7777', 'wss://a.example', 'wss://b.example'], relay_keys: { 'ws://127.0.0.1:7777': ['admin'], 'wss://b.example': ['admin'] } }),
+      }),
+    );
+    await screen.findByText('wss://a.example');
+    // a.example is the public invoices key's only relay.
+    expect((screen.getByLabelText('wss://a.example used by Public invoices') as HTMLInputElement).disabled).toBe(true);
+    await fireEvent.click(screen.getByRole('button', { name: 'Remove wss://a.example' }));
+    expect(screen.getByText(/Public invoices has no other relay/)).toBeTruthy();
+    await fireEvent.click(screen.getByLabelText('wss://b.example'));
+    await fireEvent.click(screen.getByRole('button', { name: 'Replace and remove' }));
+    expect(screen.queryByText('wss://a.example')).toBeNull();
+    await save();
+    await waitFor(() =>
+      expect(t.updateSettings).toHaveBeenCalledWith({ relays: ['ws://127.0.0.1:7777', 'wss://b.example'], relay_keys: { 'ws://127.0.0.1:7777': ['admin'] } }),
+    );
+  });
+
+  it("moves the administration key to another of this page's relays, adding it when it is not listed", async () => {
+    const t = setup(settingsView(), {}, true, ['ws://127.0.0.1:7777', 'wss://page.example']);
     await screen.findByText('ws://127.0.0.1:7777');
     await fireEvent.input(screen.getByLabelText('Add relay'), { target: { value: 'wss://relay.example' } });
     await fireEvent.click(screen.getByRole('button', { name: 'Add' }));
     await fireEvent.click(screen.getByRole('button', { name: 'Remove ws://127.0.0.1:7777' }));
+    expect(screen.getByText(/Administration needs a relay that this page connects through/)).toBeTruthy();
+    expect(screen.getByText('not listed: it will be added')).toBeTruthy();
+    await fireEvent.click(screen.getByRole('button', { name: 'Replace and remove' }));
     await save();
-    await waitFor(() => expect(t.updateSettings).toHaveBeenCalledWith({ relays: ['wss://relay.example'] }));
-    expect(t.confirm).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(t.updateSettings).toHaveBeenCalledWith({ relays: ['wss://relay.example', 'wss://page.example'] }));
+  });
+
+  it('still asks before saving when the saved relays already leave this page without the administration key', async () => {
+    const t = setup(settingsView({ settings: settings({ relays: ['wss://a.example'] }) }), {}, false);
+    await screen.findByText('wss://a.example');
+    expect(screen.getByRole('alert').textContent).toContain('This page signs in through the administration key');
+    await fireEvent.input(screen.getByLabelText('Proof of work (bits)'), { target: { value: '18' } });
+    await save();
+    expect(t.confirm).toHaveBeenCalledWith(expect.stringContaining('would no longer use any of them'));
+    expect(t.updateSettings).not.toHaveBeenCalled();
+  });
+
+  it('closes the replacement dialog on Escape', async () => {
+    setup(settingsView({ settings: settings({ relays: ['ws://127.0.0.1:7777', 'wss://a.example'], relay_keys: { 'ws://127.0.0.1:7777': ['admin'] } }) }));
+    await screen.findByText('wss://a.example');
+    await fireEvent.click(screen.getByRole('button', { name: 'Remove wss://a.example' }));
+    expect(screen.getByText(/Public invoices has no other relay/)).toBeTruthy();
+    await fireEvent(document.querySelector('dialog')!, new Event('cancel'));
+    expect(screen.queryByText(/Public invoices has no other relay/)).toBeNull();
+  });
+
+  it('removes a relay that no key depends on without asking', async () => {
+    setup(settingsView({ settings: settings({ relays: ['ws://127.0.0.1:7777', 'wss://a.example'] }) }));
+    await screen.findByText('wss://a.example');
+    await fireEvent.click(screen.getByRole('button', { name: 'Remove wss://a.example' }));
+    expect(screen.queryByRole('button', { name: 'Replace and remove' })).toBeNull();
+    expect(screen.queryByText('wss://a.example')).toBeNull();
   });
 
   it('explains each key, with how many relays and proxies it uses', async () => {
