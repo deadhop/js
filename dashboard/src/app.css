@@ -2434,6 +2434,8 @@ dialog.replace-relay h2 {
   font-weight: 800;
   font-size: 1.75rem;
   line-height: 1.1;
+  /* A count is not a verdict: only the line under it carries the tone. */
+  color: var(--text);
 }
 .map-tile-line {
   font-size: 0.8125rem;
