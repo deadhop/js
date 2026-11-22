@@ -13,7 +13,13 @@ HTMLDialogElement.prototype.close ??= function (this: HTMLDialogElement) {
 };
 
 
-function setup(view = settingsView(), over: Record<string, ReturnType<typeof vi.fn>> = {}, answer = true, dashboardRelays = ['ws://127.0.0.1:7777']) {
+function setup(
+  view = settingsView(),
+  over: Record<string, ReturnType<typeof vi.fn>> = {},
+  answer = true,
+  dashboardRelays = ['ws://127.0.0.1:7777'],
+  section: 'general' | 'network' = 'network',
+) {
   const api = {
     getSettings: vi.fn().mockResolvedValue(view),
     updateSettings: vi.fn().mockResolvedValue(view),
@@ -27,9 +33,12 @@ function setup(view = settingsView(), over: Record<string, ReturnType<typeof vi.
   };
   const onChanged = vi.fn();
   const confirm = vi.fn().mockReturnValue(answer);
-  render(Settings, { props: { api: api as unknown as PayApi, dashboardRelays, onChanged, confirm, showSweep: true } });
+  render(Settings, { props: { api: api as unknown as PayApi, dashboardRelays, onChanged, confirm, showSweep: true, section } });
   return { ...api, onChanged, confirm };
 }
+
+/** The Settings tab (everything but relays and proxies). */
+const general = (view = settingsView(), over: Record<string, ReturnType<typeof vi.fn>> = {}, answer = true) => setup(view, over, answer, undefined, 'general');
 
 const save = () => fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
 
@@ -46,27 +55,52 @@ describe('Settings', () => {
   });
 
   it('counts unsaved changes in the save bar, says what saving does, and discards them', async () => {
-    setup();
+    general();
     await screen.findByText('No unsaved changes.');
     const discard = screen.getByRole('button', { name: 'Discard' }) as HTMLButtonElement;
     expect(discard.disabled).toBe(true);
     await fireEvent.input(screen.getByLabelText('Proof of work (bits)'), { target: { value: '18' } });
     expect(screen.getByText('1 change')).toBeTruthy();
     expect(screen.getByText('Saved as an override on top of the environment.')).toBeTruthy();
-    await fireEvent.input(screen.getByLabelText('Add relay'), { target: { value: 'wss://new.example' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Add' }));
-    expect(screen.getByText('2 changes')).toBeTruthy();
-    expect(screen.getByText('Relays or proxies changed: saving may reconnect the service.')).toBeTruthy();
     await fireEvent.input(screen.getByLabelText('Threshold (sats)'), { target: { value: '' } });
     expect(screen.getByText('Fill in every number.')).toBeTruthy();
     await fireEvent.input(screen.getByLabelText('Threshold (sats)'), { target: { value: '1000000' } });
     await fireEvent.click(discard);
     expect(screen.getByText('No unsaved changes.')).toBeTruthy();
+    expect((screen.getByLabelText('Proof of work (bits)') as HTMLInputElement).value).not.toBe('18');
+  });
+
+  it('says on the Network tab that saving may reconnect, and discards a new relay', async () => {
+    setup();
+    await screen.findByText('No unsaved changes.');
+    await fireEvent.input(screen.getByLabelText('Add relay'), { target: { value: 'wss://new.example' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+    expect(screen.getByText('1 change')).toBeTruthy();
+    expect(screen.getByText('Relays or proxies changed: saving may reconnect the service.')).toBeTruthy();
+    await fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
     expect(screen.queryByText('wss://new.example')).toBeNull();
   });
 
+  it('splits the cards: Network has relays and proxies, Settings has the rest', async () => {
+    setup();
+    await screen.findByRole('heading', { name: 'How the service is reached' });
+    expect(screen.getByRole('heading', { name: 'Relays' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Proxies' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Abuse protection' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Reset to environment' })).toBeNull();
+    document.body.innerHTML = '';
+    const t = general();
+    await screen.findByRole('heading', { name: 'How the service behaves' });
+    expect(screen.getByRole('heading', { name: 'Abuse protection' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Relays' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Proxies' })).toBeNull();
+    // Only the Network tab reads relay history and proxy health.
+    expect(t.getRelayHistory).not.toHaveBeenCalled();
+    expect(t.getHealth).not.toHaveBeenCalled();
+  });
+
   it('sends every field that was changed', async () => {
-    const t = setup();
+    const t = general();
     const fields: [string, string][] = [
       ['Name', 'Shop'],
       ['Request age limit (s)', '120'],
@@ -128,7 +162,7 @@ describe('Settings', () => {
   });
 
   it('sends only what changed', async () => {
-    const t = setup();
+    const t = general();
     await fireEvent.input(await screen.findByLabelText('Proof of work (bits)'), { target: { value: '22' } });
     await fireEvent.click(screen.getByLabelText('Public invoicing'));
     await fireEvent.click(screen.getByLabelText('Enabled'));
@@ -143,7 +177,7 @@ describe('Settings', () => {
   });
 
   it('says when there is nothing to save and refuses empty numbers', async () => {
-    const t = setup();
+    const t = general();
     await screen.findByLabelText('Proof of work (bits)');
     await save();
     expect(screen.getByText('Nothing to save.')).toBeTruthy();
@@ -227,7 +261,8 @@ describe('Settings', () => {
     const t = setup(settingsView({ settings: settings({ relays: ['wss://a.example'] }) }), {}, false);
     await screen.findByText('wss://a.example');
     expect(screen.getByRole('alert').textContent).toContain('This page signs in through the administration key');
-    await fireEvent.input(screen.getByLabelText('Proof of work (bits)'), { target: { value: '18' } });
+    await fireEvent.input(screen.getByLabelText('Add relay'), { target: { value: 'wss://b.example' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Add' }));
     await save();
     expect(t.confirm).toHaveBeenCalledWith(expect.stringContaining('would no longer use any of them'));
     expect(t.updateSettings).not.toHaveBeenCalled();
@@ -370,7 +405,7 @@ describe('Settings', () => {
 
   it('marks overridden values, shows warnings and resets', async () => {
     const view = settingsView({ overridden: ['name', 'pow_bits'], warnings: ['weak proof of work'], restart_pending: true });
-    const t = setup(view);
+    const t = general(view);
     await screen.findByLabelText('Name *');
     expect(screen.getByLabelText('Proof of work (bits) *')).toBeTruthy();
     expect(screen.getByText('weak proof of work')).toBeTruthy();
@@ -381,7 +416,7 @@ describe('Settings', () => {
   });
 
   it('does not reset without confirmation, and reports failures', async () => {
-    const t = setup(settingsView({ overridden: ['name'] }), { updateSettings: vi.fn().mockRejectedValue(new Error('The service rejected the request as invalid.')) }, false);
+    const t = general(settingsView({ overridden: ['name'] }), { updateSettings: vi.fn().mockRejectedValue(new Error('The service rejected the request as invalid.')) }, false);
     await fireEvent.click(await screen.findByRole('button', { name: 'Reset to environment' }));
     expect(t.resetSettings).not.toHaveBeenCalled();
     await fireEvent.input(screen.getByLabelText('Name *'), { target: { value: 'Shop' } });
@@ -389,19 +424,19 @@ describe('Settings', () => {
     await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('The service rejected the request as invalid.'));
 
     document.body.innerHTML = '';
-    setup(settingsView(), { getSettings: vi.fn().mockRejectedValue(new Error('This key is not allowed to do that.')) });
+    general(settingsView(), { getSettings: vi.fn().mockRejectedValue(new Error('This key is not allowed to do that.')) });
     await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('This key is not allowed to do that.'));
   });
 
   it('shows what is fixed on the host', async () => {
-    setup();
+    general();
     expect(await screen.findByText('Fixed on the host')).toBeTruthy();
     expect(screen.getByText('127.0.0.1:50001')).toBeTruthy();
     expect(screen.getByText('off')).toBeTruthy();
   });
 
   it('shows discovery announcements when they are on', async () => {
-    setup(settingsView({ fixed: { ...settingsView().fixed, announce: true } }));
+    general(settingsView({ fixed: { ...settingsView().fixed, announce: true } }));
     await screen.findByText('on');
   });
 });
