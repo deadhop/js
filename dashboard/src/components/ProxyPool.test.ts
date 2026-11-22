@@ -23,7 +23,7 @@ function setup(over: Partial<ProxySettings> = {}, pool: ProxyPool | null = null,
 }
 
 const save = () => fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
-const names = () => screen.queryAllByLabelText(/^Drag to reorder proxy/).map((g) => g.closest('li')!.querySelector('.proxy-name')!.textContent);
+const names = () => [...document.querySelectorAll('.proxy-row .proxy-name')].map((n) => n.textContent);
 const patchOf = (t: ReturnType<typeof setup>) => t.updateSettings.mock.calls.at(-1)![0];
 const rows = () => [...document.querySelectorAll('li.proxy-row')];
 
@@ -187,13 +187,15 @@ describe('the proxy list', () => {
     await waitFor(() => expect(patchOf(t).proxies.list[0]).toEqual({ id: 'a', name: 'tor', url: 'socks5://me:new@10.0.0.1:9150', keys: [] }));
   });
 
-  it('removes a proxy', async () => {
+  it('removes a proxy, and drops reordering once one is left', async () => {
     const t = setup({ list: TWO });
     await screen.findByText('tor');
     await fireEvent.click(screen.getByRole('button', { name: 'Edit proxy 2' }));
     await fireEvent.click(screen.getByRole('button', { name: 'Remove proxy 1' }));
     expect(screen.queryByLabelText('Host')).toBeNull();
     expect(names()).toEqual(['Unnamed proxy']);
+    expect(screen.queryByLabelText(/^Drag to reorder proxy/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Move proxy 1 up' })).toBeNull();
     await save();
     await waitFor(() => expect(patchOf(t)).toEqual({ proxies: { list: [{ id: 'b', name: '', url: 'http://10.0.0.2:3128', keys: [] }] } }));
   });
@@ -270,6 +272,18 @@ describe('the strategy', () => {
     expect(screen.getAllByText(/Rotation needs two reachable proxies/).length).toBeGreaterThan(0);
   });
 
+  it('is hidden until a second proxy is listed, then appears', async () => {
+    setup({ list: [TWO[0]], mode: 'chaos' });
+    await screen.findByText('tor');
+    expect(screen.queryByText('Strategy')).toBeNull();
+    expect(screen.queryByLabelText('Round-robin')).toBeNull();
+    expect(screen.queryByLabelText('Shortest time before a change')).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Create proxy' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Add to list' }));
+    expect(screen.getByText('Strategy')).toBeTruthy();
+    expect((screen.getByLabelText('Chaos') as HTMLInputElement).checked).toBe(true);
+  });
+
   it('refuses a chaos range that runs backwards, an empty interval and one out of range', async () => {
     setup({ list: TWO, mode: 'chaos' });
     await screen.findByText('tor');
@@ -336,16 +350,17 @@ describe('when no proxy is reachable', () => {
 });
 
 describe('a transparent proxy', () => {
-  it('is declared with one switch, which greys out everything else and keeps the data', async () => {
+  it('is declared with one switch, which hides everything else and keeps the data', async () => {
     const t = setup({ list: TWO });
     await screen.findByText('tor');
-    const body = document.querySelector('fieldset.pool-body') as HTMLFieldSetElement;
-    expect(body.disabled).toBe(false);
-    await fireEvent.click(screen.getByLabelText(/I run a transparent proxy around this service/));
-    expect(body.disabled).toBe(true);
-    expect(body.className).toContain('greyed');
+    expect((document.querySelector('fieldset.pool-body') as HTMLFieldSetElement).disabled).toBe(false);
+    const toggle = screen.getByLabelText(/I run a transparent proxy around this service/);
+    await fireEvent.click(toggle);
+    expect(document.querySelector('fieldset.pool-body')).toBeNull();
     expect(screen.getByText(/The service trusts it and checks nothing/)).toBeTruthy();
+    await fireEvent.click(toggle);
     expect(names()).toEqual(['tor', 'Unnamed proxy']);
+    await fireEvent.click(toggle);
     await save();
     await waitFor(() => expect(t.updateSettings).toHaveBeenLastCalledWith({ proxies: { transparent: true } }));
   });
