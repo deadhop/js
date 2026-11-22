@@ -33,7 +33,7 @@ function setup(
   };
   const onChanged = vi.fn();
   const confirm = vi.fn().mockReturnValue(answer);
-  render(Settings, { props: { api: api as unknown as PayApi, dashboardRelays, onChanged, confirm, showSweep: true, section } });
+  render(Settings, { props: { api: api as unknown as PayApi, dashboardRelays, onChanged, confirm, showSweep: true, section, networkView: 'relays' } });
   return { ...api, onChanged, confirm };
 }
 
@@ -85,6 +85,7 @@ describe('Settings', () => {
     setup();
     await screen.findByRole('heading', { name: 'How the service is reached' });
     expect(screen.getByRole('heading', { name: 'Relays' })).toBeTruthy();
+    await fireEvent.click(screen.getByRole('tab', { name: /^Proxies/ }));
     expect(screen.getByRole('heading', { name: 'Proxies' })).toBeTruthy();
     expect(screen.queryByRole('heading', { name: 'Abuse protection' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Reset to environment' })).toBeNull();
@@ -424,6 +425,7 @@ describe('Settings', () => {
     it('refuses to leave a key with no proxy while there is a list', async () => {
       const proxies = { ...settings().proxies, list: [{ id: 'a', name: '', url: 'socks5://h:1', keys: [], pool: true }] };
       const t = setup(settingsView({ settings: settings({ proxies }) }));
+      await fireEvent.click(await screen.findByRole('tab', { name: /^Proxies/ }));
       await fireEvent.click(await screen.findByLabelText('Proxy 1 used by Administration'));
       expect(screen.getByText('No proxy in the default route is assigned to Administration: its relays would have no way out. Give it a proxy.')).toBeTruthy();
       await save();
