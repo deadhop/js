@@ -134,7 +134,8 @@ export function resolve(s: Pick<Settings, 'relays' | 'relay_keys' | 'proxies'>, 
     else if (rule.to === 'direct') r = { via: 'direct', reason: 'rule' };
     else {
       const id = rule.to.proxy;
-      if (list.some((e) => e.id === id) && up(id)) r = { via: { proxy: id }, reason: 'rule' };
+      // "Stay offline" means never another way: it always goes through its proxy (and keeps retrying there).
+      if (list.some((e) => e.id === id) && (up(id) || rule.fallback === 'offline')) r = { via: { proxy: id }, reason: 'rule' };
       else if (rule.fallback === 'pool') r = onDefault('fallback');
       else r = { via: 'off', reason: 'proxy_down' };
     }
@@ -213,7 +214,7 @@ export const REASONS: Record<RouteReason, string> = {
   rule: 'by the rule',
   default: 'default route',
   fallback: 'fallback: the rule’s proxy is down',
-  proxy_down: 'offline: the rule’s proxy is down',
+  proxy_down: 'offline: the rule\u2019s proxy is no longer listed',
   blocked: 'blocked by the rule',
   pool_offline: 'offline: no proxy in the default route is reachable',
   never_direct: 'offline: Tor and I2P relays are never reached directly',

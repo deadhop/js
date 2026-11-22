@@ -1483,6 +1483,18 @@ ul.relay-edit > li + li {
 .relay-check .mono {
   font-size: 0.75rem;
 }
+.relay-check.degraded {
+  color: var(--warn);
+}
+.relay-check.down {
+  color: var(--bad);
+}
+.relay-check-why {
+  color: var(--muted);
+}
+.relays-test {
+  margin-left: auto;
+}
 .add-relay {
   display: flex;
   gap: 0.5rem;
@@ -2438,6 +2450,8 @@ dialog.replace-relay h2 {
   font-weight: 800;
   font-size: 1.75rem;
   line-height: 1.1;
+  /* A count is not a verdict: only the line under it carries the tone. */
+  color: var(--text);
 }
 .map-tile-line {
   font-size: 0.8125rem;
