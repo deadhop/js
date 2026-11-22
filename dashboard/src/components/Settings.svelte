@@ -268,7 +268,11 @@
         {/each}
       </div>
       {#if netView === 'routes'}
-        <RouteMap {keys} live={view.settings} pool={health?.proxy_pool ?? null} />
+        {#if health === null}
+          <p class="muted" role="status">Reading the routes from the service…</p>
+        {:else}
+          <RouteMap {keys} live={view.settings} pool={health.proxy_pool} />
+        {/if}
       {:else if netView === 'rules'}
         <Rules {keys} {form} saved={view.settings.proxies.list} pool={health?.proxy_pool ?? null} {dashboardRelays} locked={view.fixed.proxy_locked} onproxies={() => (netView = 'proxies')} />
       {:else if netView === 'relays'}
