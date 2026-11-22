@@ -71,8 +71,8 @@ describe('the proxy list', () => {
 });
 
 describe('the proxy patch', () => {
-  const live = settings().proxies;
   const entry = { id: 'a', name: 'tor', url: 'socks5://u:***@h:1', keys: [] };
+  const live = { ...settings().proxies, list: [entry, { ...entry, id: 'b', url: 'socks5://h:2' }] };
 
   it('is empty without changes, and names only what differs', () => {
     expect(proxiesPatch(live, structuredClone(live))).toEqual({});
@@ -92,5 +92,10 @@ describe('the proxy patch', () => {
     expect(f({ chaos_min_secs: 10 })).toBe('Intervals run from 1 minute to 7 days.');
     expect(f({ chaos_max_secs: 700_000 })).toBe('Intervals run from 1 minute to 7 days.');
     expect(f({ chaos_min_secs: 900, chaos_max_secs: 300 })).toContain('longer than the longest');
+  });
+
+  it('ignores the strategy intervals with fewer than two proxies, since the strategy is not applied', () => {
+    const one = { ...live, list: [entry] };
+    expect(proxiesPatch(one, { ...one, rotate_secs: NaN, chaos_min_secs: 900, chaos_max_secs: 300 })).toEqual({});
   });
 });

@@ -12,6 +12,8 @@
     label,
     onchange,
     disabled = false,
+    required = [],
+    requiredWhy = '',
   }: {
     keys: KeyInfo[];
     /** Key ids assigned; empty is every key. */
@@ -20,6 +22,10 @@
     label: string;
     onchange: (id: string, on: boolean) => void;
     disabled?: boolean;
+    /** Keys that cannot be switched off here (something else would lose its last way in). */
+    required?: string[];
+    /** Why, shown on hover. */
+    requiredWhy?: string;
   } = $props();
 
   const users = $derived(usersOf(assigned, keys.map((k) => k.id)));
@@ -30,10 +36,11 @@
     <span class="lbl">Used by</span>
     {#each keys as k (k.id)}
       {@const on = users.includes(k.id)}
-      <label class={on ? 'key-chip on' : 'key-chip'}>
-        <input type="checkbox" checked={on} disabled={disabled || (on && users.length === 1)} onchange={(e) => onchange(k.id, e.currentTarget.checked)} aria-label={`${label} used by ${k.label}`} />{k.label}
+      {@const pinned = on && required.includes(k.id)}
+      <label class={on ? 'key-chip on' : 'key-chip'} class:pinned title={pinned ? `${k.label}: ${requiredWhy}` : undefined}>
+        <input type="checkbox" checked={on} disabled={disabled || (on && users.length === 1) || pinned} onchange={(e) => onchange(k.id, e.currentTarget.checked)} aria-label={`${label} used by ${k.label}`} />{k.label}
       </label>
     {/each}
-    {#if users.length === keys.length}<span class="hint inline">all keys</span>{/if}
+    {#if users.length === keys.length}<span class="visually-hidden">all keys</span>{/if}
   </span>
 {/if}

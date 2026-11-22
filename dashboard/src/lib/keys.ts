@@ -62,3 +62,30 @@ export function assignmentProblem(keys: KeyInfo[], form: Settings): string {
 const TAGS: Record<string, string> = { invoices: 'Invoices', admin: 'Admin' };
 /** A short name for a key id, for badges. */
 export const keyTag = (id: string) => TAGS[id] ?? id;
+
+/**
+ * The keys that depend on `url`: without it they would have no relay left, or
+ * (the administration key) none that this page connects through. Such a key
+ * cannot be switched off for that relay, and removing the relay first asks for
+ * a replacement.
+ */
+export function dependents(relays: string[], relayKeys: Settings['relay_keys'], url: string, ids: string[], dashboard: string[]): string[] {
+  const same = (a: string) => bare(a) === bare(url);
+  const isDash = (r: string) => dashboard.some((d) => bare(d) === bare(r));
+  return ids.filter((k) => {
+    const mine = relaysOf(relays, relayKeys, k, ids);
+    if (!mine.some(same)) return false;
+    const rest = mine.filter((r) => !same(r));
+    if (rest.length === 0) return true;
+    return k === ADMIN && isDash(url) && !rest.some(isDash);
+  });
+}
+
+/** Relays that could take over for `key` when `url` goes: the other listed ones, and this page's own if not listed. For the administration key, only relays this page connects through. */
+export function replacements(relays: string[], url: string, key: string, dashboard: string[]): string[] {
+  const isDash = (r: string) => dashboard.some((d) => bare(d) === bare(r));
+  const others = relays.filter((r) => bare(r) !== bare(url));
+  const extra = dashboard.filter((d) => bare(d) !== bare(url) && !relays.some((r) => bare(r) === bare(d)));
+  const all = [...others, ...extra];
+  return key === ADMIN && isDash(url) ? all.filter(isDash) : all;
+}
