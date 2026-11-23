@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assignmentProblem, keyTag, proxiesOf, relayKeysFor, relayKeysText, relayUsers, relaysOf, toggled, usersOf } from './keys';
+import { ADMIN, assignmentProblem, dependents, keyTag, proxiesOf, relayKeysFor, relayKeysText, relayUsers, relaysOf, replacements, toggled, usersOf } from './keys';
 import { keyInfos, settings } from '../test-helpers';
 
 const ids = ['invoices', 'admin'];
@@ -60,5 +60,35 @@ describe('who uses what', () => {
     expect(keyTag('invoices')).toBe('Invoices');
     expect(keyTag('admin')).toBe('Admin');
     expect(keyTag('reports')).toBe('reports');
+  });
+});
+
+describe('relays a key depends on', () => {
+  const A = 'wss://a.example';
+  const B = 'wss://b.example';
+  const DASH = 'ws://127.0.0.1:7777';
+
+  it('names the keys that would have no relay left', () => {
+    // invoices uses only A; admin uses A and B.
+    const map = { [B]: [ADMIN] };
+    expect(dependents([A, B], map, `${A}/`, ids, [])).toEqual(['invoices']);
+    expect(dependents([A, B], map, B, ids, [])).toEqual([]);
+    expect(dependents([A, B], {}, A, ids, [])).toEqual([]);
+    // A relay a key does not use is never one it depends on.
+    expect(dependents([A, B], { [A]: ['invoices'], [B]: [ADMIN] }, A, ids, [])).toEqual(['invoices']);
+  });
+
+  it("keeps the administration key on a relay this page connects through when it is the last such", () => {
+    expect(dependents([DASH, A], {}, DASH, ids, [DASH])).toEqual([ADMIN]);
+    expect(dependents([DASH, A], {}, DASH, ids, [DASH, A])).toEqual([]);
+    expect(dependents([DASH, A], {}, A, ids, [DASH])).toEqual([]);
+  });
+
+  it('offers the other relays, and this page\'s own when not listed, as replacements', () => {
+    expect(replacements([A, B], `${A}/`, 'invoices', [DASH])).toEqual([B, DASH]);
+    expect(replacements([A, DASH], A, 'invoices', [`${DASH}/`])).toEqual([DASH]);
+    // The administration key losing a dashboard relay is offered only dashboard relays.
+    expect(replacements([A, DASH, B], DASH, ADMIN, [DASH, B])).toEqual([B]);
+    expect(replacements([A, B], A, ADMIN, [DASH])).toEqual([B, DASH]);
   });
 });
