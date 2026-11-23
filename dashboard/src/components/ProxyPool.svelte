@@ -207,7 +207,8 @@
   /** One line per key when the keys do not all use the same proxies. */
   const lanes = $derived.by((): string[] => {
     if (pool === null || !proxies.list.some((p) => p.keys.length > 0)) return [];
-    return pool.lanes.map((l) => {
+    // With the strategy off nothing switches: only a key that lost its first proxy is news.
+    return pool.lanes.filter((l) => pool!.mode !== 'off' || l.state === 'offline').map((l) => {
       const label = keys.find((k) => k.id === l.key)?.label ?? keyTag(l.key);
       const proxy = pool!.proxies.find((p) => p.id === l.active);
       const using = proxy ? `using ${proxy.name === '' ? proxy.url : proxy.name}` : l.state === 'offline' ? (pool!.mode === 'off' ? 'its first proxy is down' : 'no proxy reachable') : l.state;
@@ -224,6 +225,7 @@
       case 'direct':
         return 'No proxy is listed: relays connect straight.';
       case 'active': {
+        if (pool.mode === 'off') return '';
         const next = pool.next_switch_at === null ? '' : ` · next switch in ${formatDuration(Math.max(0, pool.next_switch_at - Math.floor(Date.now() / 1000)))}`;
         return `Active · proxy ${position + 1} of ${pool.total}${next}`;
       }
@@ -430,7 +432,7 @@
 
       <div class="field strategy">
         <span class="field-title">Default route</span>
-        <p class="hint">Where a relay goes when no rule matches it{poolOf(proxies).length === 0 && proxies.list.length > 0 ? ': no proxy is in it, so those relays stay offline.' : '.'}</p>
+        <p class="hint">{poolOf(proxies).length === 0 && proxies.list.length > 0 ? 'Every relay that no rule in Rules names goes through the proxies ticked “In the default route” above. None is ticked, so those relays stay offline.' : 'Every relay that no rule in Rules names goes through the proxies ticked “In the default route” above.'}</p>
         {#if poolOf(proxies).length > 1}
           <span class="field-title" id="strategy-title">Strategy</span>
           <div class="segmented" role="radiogroup" aria-labelledby="strategy-title">
@@ -449,7 +451,7 @@
             <p class="hint">{`A random time in between, now ${shortDuration(proxies.chaos_min_secs)} to ${shortDuration(proxies.chaos_max_secs)}.`}</p>
           {/if}
           {#if proxies.mode === 'off'}
-            <p class="hint">Only the first proxy in the default route is used. Choose Failover to fall back to the others while it is down.</p>
+            <!-- The strategy's own description already says what Off does. -->
           {:else if proxies.mode !== 'failover'}
             <p class="hint">Rotation needs two reachable proxies. With only one, it is suspended and that proxy keeps carrying traffic.</p>
           {:else}
