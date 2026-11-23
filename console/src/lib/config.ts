@@ -18,7 +18,8 @@ export interface TargetInput {
 export function profileRelays(value: string): string[] {
   try {
     const d = nip19.decode(value.trim().replace(/^nostr:/, ''));
-    return d.type === 'nprofile' ? (d.data.relays ?? []) : [];
+    const relays = d.type === 'nprofile' ? d.data.relays : undefined;
+    return relays ?? [];
   } catch {
     return [];
   }
