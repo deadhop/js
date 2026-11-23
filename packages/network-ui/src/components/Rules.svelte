@@ -2,7 +2,7 @@
   import { move } from '../lib/proxy';
   import { destination, firstRule, newRule, proxyName } from '../lib/routes';
   import { keyLabel } from '../lib/routeview';
-  import type { KeyInfo, ProxyPool, ProxySettings, Rule, Settings } from '../lib/schemas';
+  import type { KeyInfo, ProxyPool, ProxySettings, Rule, NetworkSettings } from '../lib/schemas';
   import RuleEditor from './RuleEditor.svelte';
 
   // The ordered rule list. Changes go into the form (`form.proxies.rules`);
@@ -17,7 +17,7 @@
     onproxies,
   }: {
     keys: KeyInfo[];
-    form: Pick<Settings, 'relays' | 'relay_keys' | 'proxies'>;
+    form: Pick<NetworkSettings, 'relays' | 'relay_keys' | 'proxies'>;
     saved: ProxySettings['list'];
     pool: ProxyPool | null;
     dashboardRelays: string[];

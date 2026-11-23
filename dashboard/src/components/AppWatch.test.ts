@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import App from './App.svelte';
-import { activity } from '../lib/activity.svelte';
+import { activity } from '@deadhop/network-ui/lib/activity.svelte';
 
 const mocks = vi.hoisted(() => ({ connect: vi.fn() }));
 vi.mock('../lib/api', async (original) => ({ ...(await original<typeof import('../lib/api')>()), connect: mocks.connect }));

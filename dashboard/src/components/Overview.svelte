@@ -1,14 +1,14 @@
 <script lang="ts">
-  import Loading from './Loading.svelte';
-  import { poll } from '../lib/poll';
+  import Loading from '@deadhop/network-ui/components/Loading.svelte';
+  import { poll } from '@deadhop/network-ui/lib/poll';
   import type { ControlAction, PayApi } from '../lib/api';
   import type { AdminInvoice, Health, Metrics, PrivacyAudit, Range, RelayHealth, RelayHistory, Series } from '../lib/schemas';
-  import { statusLabel } from '../lib/format';
-  import { dropId, formatBtc, formatBytes, formatDuration, formatSats, formatTime } from '../lib/format';
-  import { errorRate, statsFor } from '../lib/relays';
+  import { statusLabel } from '@deadhop/network-ui/lib/format';
+  import { dropId, formatBtc, formatBytes, formatDuration, formatSats, formatTime } from '@deadhop/network-ui/lib/format';
+  import { errorRate, statsFor } from '@deadhop/network-ui/lib/relays';
   import Chart from './Chart.svelte';
-  import RelayBars from './RelayBars.svelte';
-  import KeyBadges from './KeyBadges.svelte';
+  import RelayBars from '@deadhop/network-ui/components/RelayBars.svelte';
+  import KeyBadges from '@deadhop/network-ui/components/KeyBadges.svelte';
   import ServiceKey from './ServiceKey.svelte';
   import Warnings from './Warnings.svelte';
 

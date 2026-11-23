@@ -66,23 +66,8 @@ export type SettingsPatch = Partial<Omit<Settings, 'sweep' | 'proxies'>> & {
   proxies?: ProxiesPatch;
 };
 
-/** A proxy as sent: no `id` makes a new one; a hidden password stays with its `id`. */
-export interface ProxyInput {
-  id?: string;
-  name?: string;
-  url: string;
-  /** Key ids whose default route may use it; empty or left out is every key. */
-  keys?: string[];
-  /** In the default route; left out is yes. */
-  pool?: boolean;
-  /** An I2P router's HTTP proxy; left out is no. */
-  i2p?: boolean;
-}
-
-/** Changes to the proxy settings; `list` replaces the whole list. */
-export interface ProxiesPatch extends Partial<Omit<Settings['proxies'], 'list'>> {
-  list?: ProxyInput[];
-}
+export type { ProxiesPatch, ProxyInput } from '@deadhop/network-ui/lib/network-api';
+import type { ProxiesPatch } from '@deadhop/network-ui/lib/network-api';
 
 /** How long an I2P name lookup may take: the service gives registries 90 seconds. */
 export const LOOKUP_TIMEOUT_MS = 120_000;

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PrivateKeySigner } from '@contextvm/sdk';
 import { ApiError, LOOKUP_TIMEOUT_MS, PayApi, connect, probeService, toApiError, withTimeout } from './api';
-import { activity } from './activity.svelte';
+import { activity } from '@deadhop/network-ui/lib/activity.svelte';
 import { CTXVM_KIND, PowError } from '@deadhop/client';
 import { ADMIN_PUBKEY, PUBKEY, adminInvoice, audit, health, i2pLookup, relayHistory, info, invoice, metrics, privacyAudit, proxyCheck, series, settingsView, stats, toolResult } from '../test-helpers';
 

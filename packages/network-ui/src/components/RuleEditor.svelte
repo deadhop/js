@@ -1,6 +1,6 @@
 <script lang="ts">
   import { destination, isLocalOrOverlay, patternProblem, proxyName, resolve, rulesProblem, type DefaultRoute, type Route } from '../lib/routes';
-  import type { KeyInfo, ProxyPool, ProxySettings, Rule, Settings } from '../lib/schemas';
+  import type { KeyInfo, ProxyPool, ProxySettings, Rule, NetworkSettings } from '../lib/schemas';
   import KeyChips from './KeyChips.svelte';
   import { toggled } from '../lib/keys';
   import { keyLabel } from '../lib/routeview';
@@ -23,7 +23,7 @@
     index: number | null;
     keys: KeyInfo[];
     /** The form as it is (relays, assignments, proxies and the other rules). */
-    form: Pick<Settings, 'relays' | 'relay_keys' | 'proxies'>;
+    form: Pick<NetworkSettings, 'relays' | 'relay_keys' | 'proxies'>;
     /** The saved proxies: a rule can only go through one of these. */
     saved: ProxySettings['list'];
     pool: ProxyPool | null;

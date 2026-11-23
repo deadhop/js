@@ -1,8 +1,8 @@
 <script lang="ts">
-  import Loading from './Loading.svelte';
+  import Loading from '@deadhop/network-ui/components/Loading.svelte';
   import type { PayApi } from '../lib/api';
   import { normalizePubkey, type AuditLog, type SettingsView } from '../lib/schemas';
-  import { formatTime, shortKey } from '../lib/format';
+  import { formatTime, shortKey } from '@deadhop/network-ui/lib/format';
 
   let {
     api,

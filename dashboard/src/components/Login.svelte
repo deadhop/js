@@ -1,7 +1,7 @@
 <script lang="ts">
   export type SignInKind = 'extension' | 'secret' | 'guest';
   export type ServiceStatus = 'checking' | 'online' | 'offline';
-  import Loading from './Loading.svelte';
+  import Loading from '@deadhop/network-ui/components/Loading.svelte';
 
   let {
     onSignIn,

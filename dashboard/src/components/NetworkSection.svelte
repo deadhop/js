@@ -2,18 +2,18 @@
   // The Network tab: how each relay is routed, the relays and who uses them,
   // the proxies and the routing rules. It edits the same form as the rest of
   // the settings; the page around it saves it.
-  import { poll } from '../lib/poll';
-  import type { NetworkApi } from '../lib/network-api';
-  import { ADMIN, dependents, proxiesOf, relayUsers, relaysOf } from '../lib/keys';
+  import { poll } from '@deadhop/network-ui/lib/poll';
+  import type { NetworkApi } from '@deadhop/network-ui/lib/network-api';
+  import { ADMIN, dependents, proxiesOf, relayUsers, relaysOf } from '@deadhop/network-ui/lib/keys';
   import type { I2pLookup, RelayHealth, RelayHistory, Settings, SettingsView } from '../lib/schemas';
-  import type { NetworkHealth } from '../lib/network-api';
-  import { errorRate, i2pName, lookupLine, registryHost, relayProblem, statsFor, withHost } from '../lib/relays';
-  import { REASONS, destination, firstRule, proxyName } from '../lib/routes';
-  import { mapRows, trace } from '../lib/routeview';
-  import KeyChips from './KeyChips.svelte';
-  import ProxyPool from './ProxyPool.svelte';
-  import RouteMap from './RouteMap.svelte';
-  import Rules from './Rules.svelte';
+  import type { NetworkHealth } from '@deadhop/network-ui/lib/network-api';
+  import { errorRate, i2pName, lookupLine, registryHost, relayProblem, statsFor, withHost } from '@deadhop/network-ui/lib/relays';
+  import { REASONS, destination, firstRule, proxyName } from '@deadhop/network-ui/lib/routes';
+  import { mapRows, trace } from '@deadhop/network-ui/lib/routeview';
+  import KeyChips from '@deadhop/network-ui/components/KeyChips.svelte';
+  import ProxyPool from '@deadhop/network-ui/components/ProxyPool.svelte';
+  import RouteMap from '@deadhop/network-ui/components/RouteMap.svelte';
+  import Rules from '@deadhop/network-ui/components/Rules.svelte';
 
   type NetworkView = 'routes' | 'relays' | 'proxies' | 'rules';
 

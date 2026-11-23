@@ -1,9 +1,9 @@
 <script lang="ts">
-  import Loading from './Loading.svelte';
-  import { poll } from '../lib/poll';
+  import Loading from '@deadhop/network-ui/components/Loading.svelte';
+  import { poll } from '@deadhop/network-ui/lib/poll';
   import type { PayApi } from '../lib/api';
   import type { AdminInvoice, Info, Invoice, Stats, Status } from '../lib/schemas';
-  import { dropId, formatSats, formatShortTime, formatTime, shortKey, statusLabel } from '../lib/format';
+  import { dropId, formatSats, formatShortTime, formatTime, shortKey, statusLabel } from '@deadhop/network-ui/lib/format';
   import { payHash } from '../lib/route';
   import CreateInvoice from './CreateInvoice.svelte';
   import Qr from './Qr.svelte';

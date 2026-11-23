@@ -2,7 +2,7 @@
 // (health) and the saved settings: rows for the map, the tiles above it, a
 // summary per proxy, and the trace of a relay through the rules.
 import { firstRule, hostPort, isLocalOrOverlay, proxyName } from './routes';
-import type { KeyInfo, ProxyPool, RouteReason, RouteState, Rule, Settings } from './schemas';
+import type { KeyInfo, ProxyPool, RouteReason, RouteState, Rule, NetworkSettings } from './schemas';
 
 /** One line of the map: a relay, for some keys, and where it goes. */
 export interface MapRow {
@@ -53,7 +53,7 @@ export interface Tile {
 }
 
 /** The four numbers above the map. */
-export function tiles(routes: RouteState[], live: Settings, pool: ProxyPool): Tile[] {
+export function tiles(routes: RouteState[], live: NetworkSettings, pool: ProxyPool): Tile[] {
   const relays = [...new Set(routes.map((r) => r.relay))];
   const dark = relays.filter((relay) => routes.filter((r) => r.relay === relay).every((r) => r.via === 'off'));
   const rules = live.proxies.rules;
@@ -84,7 +84,7 @@ export interface ProxySummary {
   position: number | null;
 }
 
-export function proxySummaries(routes: RouteState[], live: Settings, pool: ProxyPool): ProxySummary[] {
+export function proxySummaries(routes: RouteState[], live: NetworkSettings, pool: ProxyPool): ProxySummary[] {
   const inPool = live.proxies.list.filter((e) => e.pool);
   return live.proxies.list.map((e) => {
     const health = pool.proxies.find((p) => p.id === e.id);

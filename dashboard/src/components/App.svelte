@@ -3,17 +3,17 @@
   import { ApiError, CONNECT_TIMEOUT_MS, connect as defaultConnect, probeService, type Session } from '../lib/api';
   import { adminTarget, loadConfig as defaultLoadConfig } from '../lib/config';
   import { nip19 } from 'nostr-tools';
-  import { shortKey } from '../lib/format';
+  import { shortKey } from '@deadhop/network-ui/lib/format';
   import { parseRoute, payHash, type Route } from '../lib/route';
   import type { Config, Invoice } from '../lib/schemas';
   import { localSigner, nip07Signer, type Nip07 } from '@deadhop/client';
   import Admin from './Admin.svelte';
   import Checkout from './Checkout.svelte';
   import CreateInvoice from './CreateInvoice.svelte';
-  import Loading from './Loading.svelte';
+  import Loading from '@deadhop/network-ui/components/Loading.svelte';
   import Login, { type ServiceStatus, type SignInKind } from './Login.svelte';
   import StatusBar from './StatusBar.svelte';
-  import { activity } from '../lib/activity.svelte';
+  import { activity } from '@deadhop/network-ui/lib/activity.svelte';
   import ServiceKey from './ServiceKey.svelte';
 
   let {

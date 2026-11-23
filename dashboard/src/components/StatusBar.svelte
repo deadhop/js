@@ -2,7 +2,7 @@
   // Always at the bottom of the window: what the dashboard is doing, how long
   // it has been waiting, and what went wrong last. Details lists every call
   // still waiting.
-  import { activity as shared, describe, elapsedText, toolLabel, type Activity } from '../lib/activity.svelte';
+  import { activity as shared, describe, elapsedText, toolLabel, type Activity } from '@deadhop/network-ui/lib/activity.svelte';
 
   let { watch = shared, tickMs = 1000, raised = false }: { watch?: Activity; tickMs?: number; raised?: boolean } = $props();
 
