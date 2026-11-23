@@ -3,11 +3,12 @@
   import { poll } from '../lib/poll';
   import type { PayApi, SettingsPatch } from '../lib/api';
   import { ADMIN, assignmentProblem, dependents, proxiesOf, relayKeysFor, relayKeysText, relayUsers, relaysOf, replacements, toggled } from '../lib/keys';
-  import { proxiesPatch } from '../lib/proxy';
+  import { i2pProxy, proxiesPatch } from '../lib/proxy';
   import type { Health, I2pLookup, RelayHealth, RelayHistory, Settings, SettingsView } from '../lib/schemas';
   import { errorRate, i2pName, lookupLine, registryHost, relayProblem, statsFor, withHost } from '../lib/relays';
   import { REASONS, destination, firstRule, proxyName, rulesProblem } from '../lib/routes';
   import { mapRows, trace } from '../lib/routeview';
+  import I2pRegistries from './I2pRegistries.svelte';
   import KeyChips from './KeyChips.svelte';
   import ProxyPool from './ProxyPool.svelte';
   import RouteMap from './RouteMap.svelte';
@@ -651,6 +652,10 @@
           </div>
           <label class="check"><input id="sweep-on" type="checkbox" bind:checked={form.sweep.enabled} /> Enabled</label>
         </section>
+      {/if}
+
+      {#if section === 'general' && i2pProxy(form.proxies)}
+        <I2pRegistries proxies={form.proxies} router={proxyName(i2pProxy(form.proxies)!)} />
       {/if}
 
       <section class="card host-only" aria-labelledby="s-host">
