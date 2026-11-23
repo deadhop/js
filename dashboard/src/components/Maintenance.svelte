@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Loading from './Loading.svelte';
   import type { ControlAction, PayApi } from '../lib/api';
   import type { Backup, Health } from '../lib/schemas';
   import { formatBytes, formatTime } from '../lib/format';
@@ -89,6 +90,7 @@
 
 {#if error}<p class="error" role="alert">{error}</p>{/if}
 {#if notice}<p class="note" role="status">{notice}</p>{/if}
+{#if !health && !error}<Loading label="Loading maintenance" />{/if}
 
 <div class="two-col">
   <section class="card" aria-labelledby="m-invoicing">

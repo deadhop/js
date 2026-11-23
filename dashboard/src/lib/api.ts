@@ -10,6 +10,8 @@ import {
   localSigner,
   type MineOptions,
 } from '@deadhop/client';
+import { activity, type Activity } from './activity.svelte';
+import type { ToolCaller } from '@deadhop/client';
 import {
   AuditLogSchema,
   BackupListSchema,
@@ -207,9 +209,19 @@ export async function connect(
   config: Config,
   mining: MineOptions = {},
   timeoutMs = CONNECT_TIMEOUT_MS,
+  watch: Activity | null = activity,
 ): Promise<Session> {
-  const session = await connectService(signer, config, { mining, timeoutMs, clientName: 'deadhop-dashboard' });
-  return { api: new PayApi(session.callTool), pubkey: session.pubkey, info: session.info, close: session.close };
+  const session = await connectService(signer, config, {
+    mining,
+    timeoutMs,
+    clientName: 'deadhop-dashboard',
+    onActivity: watch?.listener(),
+  });
+  // Every call shows in the status bar while it waits.
+  const callTool: ToolCaller = watch
+    ? (name, args, ms) => watch.track(name, () => session.callTool(name, args, ms))
+    : session.callTool;
+  return { api: new PayApi(callTool), pubkey: session.pubkey, info: session.info, close: session.close };
 }
 
 /**
@@ -217,6 +229,7 @@ export async function connect(
  * request with a throwaway key. Reveals nothing but online or not.
  */
 export async function probeService(config: Config, open: typeof connect = connect): Promise<void> {
-  const session = await open(localSigner(undefined), config);
+  // Not shown in the status bar: it is a check, not something the user asked for.
+  const session = await open(localSigner(undefined), config, {}, CONNECT_TIMEOUT_MS, null);
   await session.close();
 }
