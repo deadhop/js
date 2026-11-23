@@ -10,6 +10,7 @@ COPY packages/solid/package.json packages/solid/
 COPY packages/svelte/package.json packages/svelte/
 COPY packages/network-ui/package.json packages/network-ui/
 COPY packages/e2e/package.json packages/e2e/
+COPY console/package.json console/
 COPY dashboard/package.json dashboard/
 RUN npm ci --no-audit --no-fund --workspace dashboard --workspace packages/client --workspace packages/network-ui
 COPY packages/client/ packages/client/
