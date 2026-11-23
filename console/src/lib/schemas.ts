@@ -29,7 +29,7 @@ export const NetworkSettingsSchema = z.strictObject({
 export const NetworkViewSchema = z.strictObject({
   settings: NetworkSettingsSchema,
   defaults: NetworkSettingsSchema,
-  overridden: z.array(z.string().max(60)).max(10),
+  overridden: z.array(z.string().max(60)).max(40),
   /** The bitcoin network: on `bitcoin` a relay needs TLS unless it is local or on an overlay network. */
   chain: z.string().max(20),
   keys: z.array(KeyInfoSchema).max(8),
