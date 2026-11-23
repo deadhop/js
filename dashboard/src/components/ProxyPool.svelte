@@ -5,7 +5,6 @@
   import {
     I2P_PORT,
     MAX_PROXIES,
-    MAX_REGISTRIES,
     buildProxy,
     editedUrl,
     i2pProxy,
@@ -16,12 +15,10 @@
     newEntry,
     parseProxy,
     poolOf,
-    registryProblem,
     shortDuration,
     type ProxyFields,
     type ProxyKind,
   } from '../lib/proxy';
-  import { registryHost } from '../lib/relays';
   import { destination, proxyName } from '../lib/routes';
   import type { KeyInfo, OfflinePolicy, ProxyCheck, ProxyMode, ProxyPool, ProxySettings } from '../lib/schemas';
   import Duration from './Duration.svelte';
@@ -163,21 +160,6 @@
   // ---- I2P names ----
   const router = $derived(i2pProxy(proxies));
   const i2pRuleAt = $derived(i2pRuleIndex(proxies.rules));
-  let newRegistry = $state('');
-  let registryError = $state('');
-
-  function addRegistry() {
-    const t = newRegistry.trim();
-    registryError = registryProblem(t, proxies.i2p_registries);
-    if (registryError !== '') return;
-    proxies.i2p_registries = [...proxies.i2p_registries, t];
-    newRegistry = '';
-  }
-
-  function removeRegistry(r: string) {
-    proxies.i2p_registries = proxies.i2p_registries.filter((x) => x !== r);
-  }
-
   function routeI2p(id: string) {
     proxies.rules = [...proxies.rules, i2pRule(id)];
   }
@@ -385,38 +367,8 @@
 
       {#if router}
         <div class="i2p-names" role="group" aria-labelledby="i2p-title">
-          <span class="field-title" id="i2p-title">I2P names</span>
-          <p class="hint">
-            {`When you add a relay by its .i2p name, the name is looked up once through ${proxyName(router)}, by asking these registries. The relay is saved under the .b32.i2p address it gets, so your router does not need to know the name.`}
-          </p>
-          <ul class="plain registry-list" aria-label="I2P name registries">
-            {#each proxies.i2p_registries as r (r)}
-              <li>
-                <code class="mono">{r}</code>
-                <button type="button" class="sm remove" aria-label={`Remove registry ${registryHost(r)}`} onclick={() => removeRegistry(r)}>Remove</button>
-              </li>
-            {:else}
-              <li class="muted">No registries: names cannot be looked up.</li>
-            {/each}
-          </ul>
-          {#if proxies.i2p_registries.length < MAX_REGISTRIES}
-            <div class="add-relay">
-              <label class="visually-hidden" for="registry">Add registry</label>
-              <input
-                id="registry"
-                class="mono"
-                placeholder="http://registry.i2p/jump?q={'{name}'}"
-                aria-invalid={registryError !== ''}
-                aria-describedby={registryError !== '' ? 'registry-error' : undefined}
-                bind:value={newRegistry}
-                oninput={() => (registryError = '')}
-              />
-              <button type="button" onclick={addRegistry}>Add</button>
-            </div>
-          {:else}
-            <p class="hint">Four registries is the most.</p>
-          {/if}
-          {#if registryError !== ''}<p id="registry-error" class="field-error" role="alert">{registryError}</p>{/if}
+          <span class="field-title" id="i2p-title">I2P relays</span>
+          <p class="hint">{`${proxyName(router)} carries relays only when a rule sends them to it. Where .i2p names are looked up is under Settings.`}</p>
           {#if i2pRuleAt >= 0}
             <p class="hint">{`Rule ${i2pRuleAt + 1} decides where .i2p relays go: ${destination(proxies.rules[i2pRuleAt].to, proxies.list).toLowerCase()}.`}</p>
           {:else if isNew(router)}
