@@ -1,4 +1,6 @@
 <script lang="ts">
+  import Loading from './Loading.svelte';
+  import { poll } from '../lib/poll';
   import type { ControlAction, PayApi } from '../lib/api';
   import type { AdminInvoice, Health, Metrics, PrivacyAudit, Range, RelayHealth, RelayHistory, Series } from '../lib/schemas';
   import { statusLabel } from '../lib/format';
@@ -129,9 +131,7 @@
   // Runs on mount and whenever the chart range changes.
   $effect(() => {
     const which = range;
-    void load(which);
-    const timer = setInterval(() => void load(which), refreshMs);
-    return () => clearInterval(timer);
+    return poll(() => load(which), refreshMs);
   });
 
   async function control(action: ControlAction) {
@@ -158,8 +158,8 @@
     return n === 0 ? 'Nothing to fix' : `${n} thing${n === 1 ? '' : 's'} to fix`;
   }
 
-  function heading(d: typeof data): string {
-    if (d === null) return 'Connecting…';
+  function heading(d: typeof data, failed: string): string {
+    if (d === null) return failed ? 'Not loaded.' : 'Loading…';
     return d.health.service.paused ? 'Invoicing stopped.' : 'Serving. Nothing to reach.';
   }
 
@@ -239,7 +239,7 @@
 <header class="page-head">
   <div>
     <p class="eyebrow">Overview</p>
-    <h1>{heading(data)}</h1>
+    <h1>{heading(data, error)}</h1>
   </div>
   {#if data}
     <button onclick={() => control('restart')} disabled={busy}>Restart relays</button>
@@ -253,6 +253,7 @@
 
 {#if error}<p class="error" role="alert">{error}</p>{/if}
 {#if notice}<p class="note" role="status">{notice}</p>{/if}
+{#if data === null && !error}<Loading label="Loading the overview" />{/if}
 
 {#if data}
   {@const { health, metrics, series } = data}

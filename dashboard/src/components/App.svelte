@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { NostrSigner } from '@contextvm/sdk';
-  import { ApiError, connect as defaultConnect, probeService, type Session } from '../lib/api';
+  import { ApiError, CONNECT_TIMEOUT_MS, connect as defaultConnect, probeService, type Session } from '../lib/api';
   import { adminTarget, loadConfig as defaultLoadConfig } from '../lib/config';
   import { nip19 } from 'nostr-tools';
   import { shortKey } from '../lib/format';
@@ -10,12 +10,16 @@
   import Admin from './Admin.svelte';
   import Checkout from './Checkout.svelte';
   import CreateInvoice from './CreateInvoice.svelte';
+  import Loading from './Loading.svelte';
   import Login, { type ServiceStatus, type SignInKind } from './Login.svelte';
+  import StatusBar from './StatusBar.svelte';
+  import { activity } from '../lib/activity.svelte';
   import ServiceKey from './ServiceKey.svelte';
 
   let {
     loadConfig = defaultLoadConfig,
-    connect = defaultConnect,
+    // Every call of the signed-in session shows in the status bar.
+    connect = (signer, config) => defaultConnect(signer, config, {}, CONNECT_TIMEOUT_MS, activity),
     extension = () => (window as unknown as { nostr?: Nip07 }).nostr,
     probe = probeService,
   }: {
@@ -41,7 +45,8 @@
       const signer = kind === 'extension' ? nip07Signer(extension()) : localSigner(kind === 'secret' ? secret : undefined);
       // Operators sign in through the administration key (and its relays); a payment
       // link is for the public, who use the invoices key.
-      session = await connect(signer, kind === 'guest' ? config! : adminTarget(config!));
+      const target = kind === 'guest' ? config! : adminTarget(config!);
+      session = await activity.run(route.name === 'pay' ? 'Opening the invoice' : 'Signing in', () => connect(signer, target));
     } catch (e) {
       // The administration key answers operators only.
       error = e instanceof ApiError && e.code === 'unauthorized' ? 'This key is not an operator of this service.' : (e as Error).message;
@@ -53,6 +58,7 @@
   async function signOut() {
     const old = session;
     session = null;
+    activity.reset();
     await old?.close().catch(() => undefined);
   }
 
@@ -141,10 +147,10 @@
   {#if fatal}
     <p class="error" role="alert">{fatal}</p>
   {:else if config === null}
-    <p role="status">Loading…</p>
+    <Loading label="Loading the dashboard" />
   {:else if session === null}
     {#if route.name === 'pay' && error === ''}
-      <p role="status">Connecting…</p>
+      <Loading label="Opening the invoice" />
     {:else}
       <Login onSignIn={signIn} {busy} {error} status={serviceStatus} />
     {/if}
@@ -167,3 +173,6 @@
     <ServiceKey pubkey={config.serverPubkey} compact />
   </footer>
 {/if}
+
+<!-- On every page: what the dashboard is doing and waiting for. -->
+<StatusBar raised={operator} />

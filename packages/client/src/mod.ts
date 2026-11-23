@@ -38,6 +38,7 @@ export {
   type Session,
   type ToolCaller,
 } from './api.ts';
+export { observedRelays, observedSigner, stepCounter, type ActivityEvent, type ActivityListener, type ActivityStep } from './activity.ts';
 export { localSigner, nip07Signer, parseSecret, once, type Nip07 } from './signer.ts';
 export { guestSigner, secretKeySigner } from './signers.ts';
 export { mine, needsWork, powSigner, checkWork, PowError, MAX_POW_BITS, CTXVM_KIND, type MineOptions, type Miner, type UnsignedEvent } from './pow.ts';

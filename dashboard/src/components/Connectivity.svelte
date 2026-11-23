@@ -1,4 +1,6 @@
 <script lang="ts">
+  import Loading from './Loading.svelte';
+  import { poll } from '../lib/poll';
   import type { PayApi } from '../lib/api';
   import { formatTime } from '../lib/format';
   import { WINDOWS, errorRate, type HistoryWindow } from '../lib/relays';
@@ -26,9 +28,7 @@
   // Runs on mount and whenever the window changes.
   $effect(() => {
     const which = window;
-    void load(which);
-    const timer = setInterval(() => void load(which), refreshMs);
-    return () => clearInterval(timer);
+    return poll(() => load(which), refreshMs);
   });
 
   async function checkNow() {
@@ -79,6 +79,7 @@
 </div>
 
 {#if error}<p class="error" role="alert">{error}</p>{/if}
+{#if !history && !error}<Loading label="Loading relay history" />{/if}
 
 {#if history}
   {#each history.relays as s (s.relay)}

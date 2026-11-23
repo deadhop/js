@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Loading from './Loading.svelte';
   import type { PayApi } from '../lib/api';
   import { normalizePubkey, type AuditLog, type SettingsView } from '../lib/schemas';
   import { formatTime, shortKey } from '../lib/format';
@@ -73,6 +74,7 @@
 
 {#if error}<p class="error" role="alert">{error}</p>{/if}
 {#if notice}<p class="note" role="status">{notice}</p>{/if}
+{#if !view && !error}<Loading label="Loading operators" />{/if}
 
 {#if view}
   <div class="split">

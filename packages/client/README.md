@@ -69,6 +69,7 @@ Where notemine cannot run, the built-in miner takes over. npm only (not on JSR).
 | `guestSigner()`, `secretKeySigner(nsec)`, `nip07Signer(window.nostr)` | Who signs requests |
 | `PayApi`, `connect()` | Lower level: one connection and the validated tool calls |
 | `ApiError` | Every failure, with a stable `code` |
+| `onActivity` option | Told about each step of each call (the signer signing or decrypting, the relays accepting a request, a reply arriving), for a status display. `observedSigner` and `observedRelays` do the same for your own signer and relays |
 | `qrShape`, `formatBtc`, `formatSats`, `statusLabel`, `parseSats`, `LABELS` | Presentation helpers |
 | `@deadhop/client/schemas` | The strict zod schemas behind the validation |
 | `@deadhop/client/notemine` | `notemineMiner()`: proof of work with notemine (npm only, optional peer dependency) |

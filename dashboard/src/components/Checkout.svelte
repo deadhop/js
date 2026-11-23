@@ -1,4 +1,6 @@
 <script lang="ts">
+  import Loading from './Loading.svelte';
+  import { poll } from '../lib/poll';
   import type { PayApi } from '../lib/api';
   import type { Invoice } from '../lib/schemas';
   import { formatBtc, formatSats, receivedSummary, statusLabel, timeLeft } from '../lib/format';
@@ -23,10 +25,10 @@
   let now = $state(0);
   let copied = $state(false);
 
-  async function refresh() {
+  async function refresh(which: string) {
     now = clock();
     try {
-      invoice = await api.getInvoice(id);
+      invoice = await api.getInvoice(which);
       error = '';
     } catch (e) {
       error = (e as Error).message;
@@ -34,12 +36,10 @@
   }
 
   $effect(() => {
-    void refresh();
-    const timer = setInterval(() => {
-      // A settled invoice never changes again.
-      if (invoice?.status !== 'confirmed') void refresh();
-    }, pollMs);
-    return () => clearInterval(timer);
+    // Read here, so another invoice loads again (the poll's own runs are untracked).
+    const which = id;
+    // A settled invoice never changes again.
+    return poll(() => (invoice?.status === 'confirmed' ? Promise.resolve() : refresh(which)), pollMs);
   });
 
   async function copyAddress(address: string) {
@@ -53,7 +53,7 @@
     {#if error}
       <p class="error" role="alert">{error}</p>
     {:else}
-      <p role="status">Loading invoice…</p>
+      <Loading label="Loading the invoice" />
     {/if}
   {:else}
     {@const payable = invoice.status === 'pending' || invoice.status === 'detected'}
