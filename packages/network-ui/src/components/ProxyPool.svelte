@@ -32,6 +32,7 @@
     live,
     pool,
     locked,
+    registriesAt = 'under Settings',
   }: {
     api: NetworkApi;
     /** The service's keys, for choosing which may use each proxy. */
@@ -44,6 +45,8 @@
     pool: ProxyPool | null;
     /** DEADHOP_PROXY_LOCKED. */
     locked: boolean;
+    /** Where the page keeps the I2P name registries, as words that end the sentence "… are looked up is …". */
+    registriesAt?: string;
   } = $props();
 
   const MODES: { value: ProxyMode; title: string; text: string }[] = [
@@ -368,7 +371,7 @@
       {#if router}
         <div class="i2p-names" role="group" aria-labelledby="i2p-title">
           <span class="field-title" id="i2p-title">I2P relays</span>
-          <p class="hint">{`${proxyName(router)} carries relays only when a rule sends them to it. Where .i2p names are looked up is under Settings.`}</p>
+          <p class="hint">{`${proxyName(router)} carries relays only when a rule sends them to it. Where .i2p names are looked up is ${registriesAt}.`}</p>
           {#if i2pRuleAt >= 0}
             <p class="hint">{`Rule ${i2pRuleAt + 1} decides where .i2p relays go: ${destination(proxies.rules[i2pRuleAt].to, proxies.list).toLowerCase()}.`}</p>
           {:else if isNew(router)}
