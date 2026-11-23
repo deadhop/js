@@ -1,4 +1,6 @@
 <script lang="ts">
+  import Loading from './Loading.svelte';
+  import { poll } from '../lib/poll';
   import type { PayApi } from '../lib/api';
   import type { Invoice } from '../lib/schemas';
   import { formatBtc, formatSats, receivedSummary, statusLabel, timeLeft } from '../lib/format';
@@ -34,12 +36,8 @@
   }
 
   $effect(() => {
-    void refresh();
-    const timer = setInterval(() => {
-      // A settled invoice never changes again.
-      if (invoice?.status !== 'confirmed') void refresh();
-    }, pollMs);
-    return () => clearInterval(timer);
+    // A settled invoice never changes again.
+    return poll(() => (invoice?.status === 'confirmed' ? Promise.resolve() : refresh()), pollMs);
   });
 
   async function copyAddress(address: string) {
@@ -53,7 +51,7 @@
     {#if error}
       <p class="error" role="alert">{error}</p>
     {:else}
-      <p role="status">Loading invoice…</p>
+      <Loading label="Loading the invoice" />
     {/if}
   {:else}
     {@const payable = invoice.status === 'pending' || invoice.status === 'detected'}

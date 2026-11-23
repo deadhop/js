@@ -17,7 +17,7 @@ function setup(getInvoice: ReturnType<typeof vi.fn>, extra: Record<string, unkno
 describe('Checkout', () => {
   it('shows a payable invoice with QR code, address and expiry', async () => {
     const t = setup(vi.fn().mockResolvedValue(invoice()));
-    expect(screen.getByRole('status').textContent).toBe('Loading invoice…');
+    expect(screen.getByRole('status').textContent).toBe('Loading the invoice');
     await waitFor(() => expect(screen.getByRole('heading').textContent).toBe('0.00050000 BTC'));
     expect(t.getInvoice).toHaveBeenCalledWith(ID);
     expect(screen.getByRole('status').textContent).toBe('Awaiting payment');
@@ -37,11 +37,16 @@ describe('Checkout', () => {
   });
 
   it('follows the payment until it is confirmed, then stops polling', async () => {
+    // The confirmation is held back until the confirming state has been checked.
+    let confirm: () => void = () => undefined;
+    const confirmed = new Promise<void>((r) => (confirm = r));
     const getInvoice = vi
       .fn()
       .mockResolvedValueOnce(invoice({ memo: '' }))
       .mockResolvedValueOnce(invoice({ memo: '', status: 'detected', received_sat: 50_000, confirmations_required: 2 }))
-      .mockResolvedValue(invoice({ memo: '', status: 'confirmed', received_sat: 50_000, confirmed_sat: 50_000, settled_at: 1_700_000_900 }));
+      .mockImplementation(() =>
+        confirmed.then(() => invoice({ memo: '', status: 'confirmed', received_sat: 50_000, confirmed_sat: 50_000, settled_at: 1_700_000_900 })),
+      );
     setup(getInvoice);
     await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Payment seen, confirming'));
     expect(screen.queryByText('Note from the invoice creator:')).toBeNull();
@@ -50,6 +55,7 @@ describe('Checkout', () => {
     expect(screen.getByRole('img', { name: 'Payment QR code' })).toBeTruthy();
     expect(screen.queryByText(/Expires in/)).toBeNull();
 
+    confirm();
     await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Paid'));
     expect(screen.getByText('Received 50,000 sats, confirmed 50,000 sats (needs 1 confirmation).')).toBeTruthy();
     expect(screen.queryByRole('img')).toBeNull();

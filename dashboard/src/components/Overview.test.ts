@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/sve
 import { nip19 } from 'nostr-tools';
 import Overview from './Overview.svelte';
 import type { PayApi } from '../lib/api';
+import { Activity } from '../lib/activity.svelte';
 import type { RelayHealth } from '../lib/schemas';
 import { ADMIN_PUBKEY, PUBKEY, SERVICE_PUBKEY, activePool, keyInfos, proxyPool, adminInvoice, relayHistory, relayStats, health, metrics, privacyAudit, proxyCheck, series } from '../test-helpers';
 
@@ -30,9 +31,31 @@ function setup(
 const text = (label: string) => screen.getByText(label, { selector: '.lbl' }).parentElement!.textContent!.replace(/\s+/g, ' ').trim();
 
 describe('Overview', () => {
+  it('loads once when its calls are shown in the status bar', async () => {
+    // Recording a call must not make the loading effect depend on the activity
+    // (that re-ran it without end).
+    const watch = new Activity();
+    // After a few calls they stop answering, so a loop ends in a failed count instead of a hang.
+    const waiting = <T,>(tool: string, value: T) => {
+      let n = 0;
+      return vi.fn(() => watch.track(tool, () => (++n > 3 ? new Promise<T>(() => undefined) : Promise.resolve(value))));
+    };
+    const api = setup({
+      getHealth: waiting('get_health', health()),
+      getMetrics: waiting('get_metrics', metrics()),
+      getSeries: waiting('get_payment_series', series()),
+      getRelayHistory: waiting('get_relay_history', relayHistory()),
+      getPrivacyAudit: waiting('get_privacy_audit', privacyAudit()),
+    });
+    await waitFor(() => expect(watch.lastAnswer).not.toBeNull());
+    await new Promise((r) => setTimeout(r, 20));
+    expect(api.getHealth).toHaveBeenCalledTimes(1);
+    expect(watch.calls).toEqual([]);
+  });
+
   it('heads the page while connecting, then shows health, totals, windows and the chart', async () => {
     const api = setup();
-    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Connecting…');
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Loading…');
     await screen.findByRole('heading', { name: 'Serving. Nothing to reach.' });
     expect(screen.getByText('Running')).toBeTruthy();
     expect(screen.getByText('up 1h 1m · v0.1.0 · 0 restarts')).toBeTruthy();
@@ -124,7 +147,7 @@ describe('Overview', () => {
     document.body.innerHTML = '';
     setup({ getHealth: vi.fn().mockRejectedValue(new Error('The service had an internal error.')) });
     await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('The service had an internal error.'));
-    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Connecting…');
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Not loaded.');
     expect(screen.queryByRole('button', { name: 'Restart relays' })).toBeNull();
   });
 

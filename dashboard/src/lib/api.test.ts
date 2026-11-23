@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PrivateKeySigner } from '@contextvm/sdk';
 import { ApiError, LOOKUP_TIMEOUT_MS, PayApi, connect, probeService, toApiError, withTimeout } from './api';
+import { activity } from './activity.svelte';
 import { CTXVM_KIND, PowError } from '@deadhop/client';
 import { ADMIN_PUBKEY, PUBKEY, adminInvoice, audit, health, i2pLookup, relayHistory, info, invoice, metrics, privacyAudit, proxyCheck, series, settingsView, stats, toolResult } from '../test-helpers';
 
@@ -208,12 +209,27 @@ describe('connect', () => {
     expect(session.info.pow_bits).toBe(6);
     expect(mocks.callTool).toHaveBeenCalledWith({ name: 'get_info', arguments: {} });
 
-    const options = mocks.transports[0].options as { signer: PrivateKeySigner; relayHandler: string[]; serverPubkey: string; encryptionMode: string };
-    expect(options.relayHandler).toEqual(config.relays);
+    const options = mocks.transports[0].options as {
+      signer: PrivateKeySigner;
+      relayHandler: { getRelayUrls(): string[] };
+      serverPubkey: string;
+      encryptionMode: string;
+    };
+    // The relays are watched for the status bar.
+    expect(options.relayHandler.getRelayUrls()).toEqual(config.relays);
     expect(options.serverPubkey).toBe(PUBKEY);
     expect(options.encryptionMode).toBe('required');
     const signed = await options.signer.signEvent(create as never);
     expect(signed.tags.some((t) => t[0] === 'nonce' && t[2] === '6')).toBe(true);
+
+    // Each call shows as waiting until it is answered.
+    let answer: (v: unknown) => void = () => undefined;
+    mocks.callTool.mockReturnValueOnce(new Promise((r) => (answer = r)));
+    const pending = session.api.getInfo();
+    expect(activity.calls.map((c) => c.tool)).toEqual(['get_info']);
+    answer(toolResult(info()));
+    await pending;
+    expect(activity.calls).toEqual([]);
 
     await session.close();
     expect(mocks.close).toHaveBeenCalledTimes(1);
@@ -223,6 +239,8 @@ describe('connect', () => {
     mocks.callTool.mockResolvedValue(toolResult(info()));
     await probeService(config);
     expect(mocks.callTool).toHaveBeenCalledWith({ name: 'get_info', arguments: {} });
+    // A probe is not shown in the status bar.
+    expect((mocks.transports[0].options as { relayHandler: string[] }).relayHandler).toEqual(config.relays);
     expect(mocks.close).toHaveBeenCalledTimes(1);
     const open = vi.fn().mockRejectedValue(new Error('no answer'));
     await expect(probeService(config, open)).rejects.toThrow('no answer');

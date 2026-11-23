@@ -1,4 +1,6 @@
 <script lang="ts">
+  import Loading from './Loading.svelte';
+  import { poll } from '../lib/poll';
   import type { PayApi } from '../lib/api';
   import type { AdminInvoice, Info, Invoice, Stats, Status } from '../lib/schemas';
   import { dropId, formatSats, formatShortTime, formatTime, shortKey, statusLabel } from '../lib/format';
@@ -26,6 +28,8 @@
   let filter = $state<Status | ''>('');
   let query = $state('');
   let error = $state('');
+  /** Whether the list has been loaded once. */
+  let loaded = $state(false);
   let pickedId = $state('');
   let creating = $state(false);
   let copied = $state('');
@@ -80,6 +84,7 @@
       stats = s;
       invoices = page.invoices;
       nextBefore = page.next_before;
+      loaded = true;
       error = '';
     } catch (e) {
       error = (e as Error).message;
@@ -108,9 +113,7 @@
 
   // Runs on mount and again whenever the status filter changes.
   $effect(() => {
-    void load();
-    const timer = setInterval(() => void load(), refreshMs);
-    return () => clearInterval(timer);
+    return poll(load, refreshMs);
   });
 </script>
 
@@ -150,7 +153,9 @@
 
 <div class="split">
   <section class="card flush drops" aria-label="Invoice list">
-    {#if visible.length === 0}
+    {#if !loaded && !error}
+      <Loading label="Loading invoices" />
+    {:else if visible.length === 0}
       <p class="muted empty">{invoices.length === 0 ? 'No invoices yet.' : 'No drop matches the search.'}</p>
     {:else}
       <div class="scroll">

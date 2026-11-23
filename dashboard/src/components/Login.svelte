@@ -1,6 +1,7 @@
 <script lang="ts">
   export type SignInKind = 'extension' | 'secret' | 'guest';
   export type ServiceStatus = 'checking' | 'online' | 'offline';
+  import Loading from './Loading.svelte';
 
   let {
     onSignIn,
@@ -61,6 +62,6 @@
 
   <button class="link guest" disabled={busy} onclick={() => onSignIn('guest')}>Continue as guest</button>
 
-  {#if busy}<p class="muted" role="status">Connecting…</p>{/if}
+  {#if busy}<Loading label="Signing in" />{/if}
   {#if error}<p class="error" role="alert">{error}</p>{/if}
 </section>

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import Loading from './Loading.svelte';
+  import { poll } from '../lib/poll';
   import type { PayApi, SettingsPatch } from '../lib/api';
   import { ADMIN, assignmentProblem, dependents, proxiesOf, relayKeysFor, relayKeysText, relayUsers, relaysOf, replacements, toggled } from '../lib/keys';
   import { proxiesPatch } from '../lib/proxy';
@@ -88,9 +90,7 @@
   // Read when the page opens, and again every so often: the service probes its proxies on its own.
   $effect(() => {
     if (section !== 'network') return;
-    void loadHealth();
-    const timer = setInterval(() => void loadHealth(), HEALTH_EVERY_MS);
-    return () => clearInterval(timer);
+    return poll(loadHealth, HEALTH_EVERY_MS);
   });
 
   let view = $state<SettingsView | null>(null);
@@ -356,6 +356,7 @@
 
 {#if error}<p class="error" role="alert">{error}</p>{/if}
 {#if notice}<p class="note" role="status">{notice}</p>{/if}
+{#if !view && !error}<Loading label={section === 'network' ? 'Loading the network settings' : 'Loading settings'} />{/if}
 
 {#if view && form}
   <Warnings warnings={view.warnings} />
