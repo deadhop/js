@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Loading from './Loading.svelte';
   import type { PayApi } from '../lib/api';
   import type { PrivacyAudit, PrivacyCheck } from '../lib/schemas';
   import { formatTime } from '../lib/format';
@@ -52,6 +53,7 @@
 {#if error}
   <p class="error" role="alert">{error}</p>
 {/if}
+{#if !audit && !error}<Loading label="Running the privacy audit" />{/if}
 
 {#if audit}
   <section class="card audit-head" aria-label="Privacy score">

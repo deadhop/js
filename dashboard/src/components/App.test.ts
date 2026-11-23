@@ -51,7 +51,7 @@ describe('App', () => {
 
   it('stops with an explanation when the configuration cannot be loaded', async () => {
     render(App, { props: { loadConfig: vi.fn().mockRejectedValue(new Error('config.json is invalid')), connect: vi.fn() } as never });
-    expect(screen.getByRole('status').textContent).toBe('Loading…');
+    expect(screen.getAllByRole('status').map((e) => e.textContent)).toContain('Loading the dashboard');
     await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('config.json is invalid'));
   });
 
@@ -205,7 +205,7 @@ describe('App', () => {
     const connect = vi.fn(() => new Promise((_, reject) => (fail = reject)));
     setup(connect);
     await waitFor(() => expect(connect).toHaveBeenCalledTimes(1));
-    expect(screen.getByRole('status').textContent).toBe('Connecting…');
+    expect(screen.getAllByRole('status').map((e) => e.textContent)).toContain('Opening the invoice');
     fail(new Error('Could not reach the service.'));
     await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('Could not reach the service.'));
     expect(connect).toHaveBeenCalledTimes(1);

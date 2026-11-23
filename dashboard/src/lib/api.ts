@@ -10,6 +10,7 @@ import {
   localSigner,
   type MineOptions,
 } from '@deadhop/client';
+import type { ActivityListener, ToolCaller } from '@deadhop/client';
 import {
   AuditLogSchema,
   BackupListSchema,
@@ -193,6 +194,12 @@ export class PayApi extends InvoiceApi {
   }
 }
 
+/** What follows a connection's activity (the dashboard's status bar). */
+export interface Watcher {
+  listener(): ActivityListener;
+  track<T>(tool: string, work: () => Promise<T>): Promise<T>;
+}
+
 export interface Session {
   api: PayApi;
   /** Hex public key of the signed-in identity. */
@@ -207,9 +214,19 @@ export async function connect(
   config: Config,
   mining: MineOptions = {},
   timeoutMs = CONNECT_TIMEOUT_MS,
+  watch: Watcher | null = null,
 ): Promise<Session> {
-  const session = await connectService(signer, config, { mining, timeoutMs, clientName: 'deadhop-dashboard' });
-  return { api: new PayApi(session.callTool), pubkey: session.pubkey, info: session.info, close: session.close };
+  const session = await connectService(signer, config, {
+    mining,
+    timeoutMs,
+    clientName: 'deadhop-dashboard',
+    onActivity: watch?.listener(),
+  });
+  // Every call shows in the status bar while it waits.
+  const callTool: ToolCaller = watch
+    ? (name, args, ms) => watch.track(name, () => session.callTool(name, args, ms))
+    : session.callTool;
+  return { api: new PayApi(callTool), pubkey: session.pubkey, info: session.info, close: session.close };
 }
 
 /**

@@ -1,8 +1,9 @@
 // Typed client for the payment service over ContextVM. Every response is
 // validated before any of it reaches the caller.
 import { Client } from '@contextvm/mcp-sdk/client';
-import { EncryptionMode, NostrClientTransport, type NostrSigner } from '@contextvm/sdk';
+import { ApplesauceRelayPool, EncryptionMode, NostrClientTransport, type NostrSigner } from '@contextvm/sdk';
 import type { z } from 'zod';
+import { observedRelays, observedSigner, stepCounter, type ActivityListener } from './activity.ts';
 import { PowError, powSigner, type MineOptions, type Miner } from './pow.ts';
 import { InfoSchema, InvoiceSchema, type Invoice, type ServiceConfig, type ServiceInfo } from './schemas.ts';
 
@@ -178,14 +179,22 @@ export interface ConnectOptions {
   timeoutMs?: number;
   /** Client name sent to the service. */
   clientName?: string;
+  /**
+   * Told about every step of every call (signing, sending to the relays, a
+   * reply arriving, decrypting it), for a status display.
+   */
+  onActivity?: ActivityListener;
 }
 
 /** Connect to the service over its relays and learn its parameters. */
 export async function connect(signer: NostrSigner, config: ServiceConfig, options: ConnectOptions = {}): Promise<Session> {
   let bits = 0;
+  const emit = options.onActivity;
+  const next = stepCounter();
+  const signing = powSigner(signer, () => bits, options.mining, options.miner);
   const transport = new NostrClientTransport({
-    signer: powSigner(signer, () => bits, options.mining, options.miner),
-    relayHandler: config.relays,
+    signer: emit ? observedSigner(signing, emit, next) : signing,
+    relayHandler: emit ? observedRelays(new ApplesauceRelayPool(config.relays), emit, next) : config.relays,
     serverPubkey: config.serverPubkey,
     encryptionMode: EncryptionMode.REQUIRED,
     logLevel: 'silent',

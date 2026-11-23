@@ -166,6 +166,17 @@ describe('connect', () => {
     expect(signed.tags.some((t) => t[0] === 'nonce')).toBe(false);
   });
 
+  it('reports activity from the signer and the relays when asked', async () => {
+    mocks.callTool.mockResolvedValue(toolResult(info()));
+    const seen: string[] = [];
+    await connect(new PrivateKeySigner(), config, { onActivity: (e) => seen.push(e.type === 'receive' ? e.type : `${e.type} ${e.step}`) });
+    const options = mocks.transports[0].options as { signer: PrivateKeySigner; relayHandler: { getRelayUrls(): string[] } };
+    // Its own relay pool, watched, on the same relays.
+    expect(options.relayHandler.getRelayUrls()).toEqual(config.relays);
+    await options.signer.signEvent(create as never);
+    expect(seen).toEqual(['start sign', 'end sign']);
+  });
+
   it('closes the client and reports a typed error when connecting fails', async () => {
     mocks.connect.mockRejectedValue(new Error('no relay'));
     await expect(connect(new PrivateKeySigner(), config)).rejects.toMatchObject({ code: 'network' });

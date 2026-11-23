@@ -29,7 +29,7 @@ describe('Login', () => {
 
   it('shows progress and errors, and locks the buttons while busy', () => {
     render(Login, { props: { onSignIn: vi.fn(), busy: true, error: 'Could not reach the service.' } });
-    expect(screen.getByRole('status').textContent).toBe('Connecting…');
+    expect(screen.getByRole('status').textContent).toBe('Signing in');
     expect(screen.getByRole('alert').textContent).toBe('Could not reach the service.');
     for (const b of screen.getAllByRole('button')) expect((b as HTMLButtonElement).disabled).toBe(true);
   });
