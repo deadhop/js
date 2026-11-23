@@ -213,6 +213,11 @@ button.sm {
   font-weight: 500;
   color: var(--soft);
 }
+button.sm.icon {
+  min-width: 1.875rem;
+  padding: 0.25rem;
+  line-height: 1;
+}
 button.sm.remove {
   color: var(--bad);
 }
@@ -242,13 +247,26 @@ button.link {
   font-size: 0.7rem;
   white-space: nowrap;
 }
+.badge.confirmed {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
+}
 .badge.detected {
   background: var(--tag);
   border-color: var(--tag);
   color: var(--tag-text);
 }
+.badge.expired {
+  color: var(--muted);
+}
 a {
   color: var(--accent);
+}
+code.key {
+  overflow-wrap: anywhere;
+  user-select: all;
+  min-width: 0;
 }
 .note {
   overflow-wrap: anywhere;
@@ -273,14 +291,162 @@ main > *,
 .warn {
   color: var(--warn);
 }
+.proxy-status {
+  border: 1.5px solid var(--line);
+  border-radius: 4px;
+  padding: 0.6rem 0.8rem;
+  margin-top: 0.6rem;
+  background: var(--bg);
+}
+.proxy-status.ok {
+  border-color: var(--ok);
+}
+.proxy-status.warn {
+  border-color: var(--warn);
+}
+.proxy-status.bad {
+  border-color: var(--bad);
+}
+.proxy-status.pending {
+  border-color: var(--warn);
+  border-style: dashed;
+}
+.proxy-title {
+  margin: 0;
+  font-weight: 600;
+}
+.proxy-status.ok .proxy-title {
+  color: var(--ok);
+}
+.proxy-status.warn .proxy-title,
+.proxy-status.pending .proxy-title {
+  color: var(--warn);
+}
+.proxy-status.bad .proxy-title {
+  color: var(--bad);
+}
+.proxy-detail {
+  margin: 0.15rem 0 0;
+  font-size: 0.9rem;
+}
+.proxy-relays {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 0;
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+}
+.proxy-relays li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.6rem;
+  overflow-wrap: anywhere;
+}
+.proxy-relays li::before {
+  content: '';
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  margin-top: 0.35rem;
+  background: var(--ok);
+}
+.proxy-relays li.bad::before {
+  background: var(--bad);
+}
+.proxy-relays .code {
+  color: var(--muted);
+}
 .mono {
   font-family: var(--mono);
   font-size: 0.82em;
+}
+.audit-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 1.5rem;
+  align-items: center;
+}
+.audit-summary {
+  flex: 999 1 18rem;
+  min-width: 0;
+}
+.audit-summary h2 {
+  margin: 0.2rem 0;
+}
+.ring {
+  width: 7.5rem;
+  height: 7.5rem;
+  flex: none;
+}
+.ring .track,
+.ring .value {
+  fill: none;
+  stroke-width: 10;
+}
+.ring .track {
+  stroke: var(--line);
+}
+.ring.ok .value {
+  stroke: var(--ok);
+}
+.ring.warn .value {
+  stroke: var(--warn);
+}
+.ring.bad .value {
+  stroke: var(--bad);
+}
+.ring text {
+  fill: var(--text);
+  font: 800 2rem var(--display);
+}
+.stamps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.badge.pass {
+  background: var(--ok);
+  border-color: var(--ok);
+  color: var(--bg);
+}
+.badge.fail {
+  background: var(--bad);
+  border-color: var(--bad);
+  color: var(--bg);
 }
 .badge.not_checked,
 .badge.note {
   border-style: dashed;
   color: var(--muted);
+}
+details.check {
+  border-top: 1px solid var(--line);
+  padding: 0.7rem 0;
+}
+details.check summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+  cursor: pointer;
+}
+.check-title {
+  font-weight: 600;
+  margin-right: auto;
+}
+.evidence {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--bg);
+  border: 1.5px dashed var(--line);
+  border-radius: 4px;
+  padding: 0.6rem 0.75rem;
+}
+.fix strong {
+  color: var(--warn);
 }
 .page-head {
   display: flex;
@@ -317,6 +483,9 @@ main > *,
   text-transform: uppercase;
   letter-spacing: 0.03em;
   color: var(--muted);
+}
+.badge.pending {
+  border-style: dashed;
 }
 button.link.mono {
   font-family: var(--mono);
@@ -372,10 +541,39 @@ input[aria-invalid='true'] {
   font-size: 0.875rem;
   font-weight: 500;
 }
+label.check {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-height: 2.75rem;
+  color: var(--text);
+  font-size: 0.875rem;
+}
+label.check input {
+  width: 1.25rem;
+  height: 1.25rem;
+  accent-color: var(--accent);
+}
 @media (max-width: 560px) {
   main {
     padding-bottom: 5rem;
   }
+}
+.lbl {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  line-height: 1.4;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+}
+.big {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 1.5rem;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
 }
 .dot {
   width: 0.625rem;
@@ -468,6 +666,18 @@ input[aria-invalid='true'] {
   clip-path: inset(50%);
   white-space: nowrap;
 }
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.625rem;
+}
+.toolbar input[type='search'] {
+  flex: 1 1 17.5rem;
+}
+.toolbar .segmented button {
+  min-height: 2.75rem;
+}
 .count {
   font-family: var(--mono);
   font-size: 0.75rem;
@@ -493,6 +703,16 @@ form.settings .card h2 {
 }
 form.settings .card-head {
   margin-bottom: 0;
+}
+.grid2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16.25rem), 1fr));
+  gap: 1rem;
+  margin: 0;
+  align-items: start;
+}
+.grid2.tight {
+  gap: 0.75rem;
 }
 .field input,
 .field select {
@@ -581,6 +801,52 @@ ul.relay-edit > li + li {
     padding: 0.75rem 1rem;
   }
 }
+button.link.back {
+  justify-self: start;
+  padding: 0;
+  font-size: 0.875rem;
+}
+.audit-head {
+  padding: 1.5rem;
+  gap: 1.5rem;
+}
+.audit-summary {
+  display: grid;
+  gap: 0.5rem;
+}
+.audit-summary p {
+  margin: 0;
+}
+.audit-summary h1 {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 2.125rem;
+  line-height: 1.05;
+  letter-spacing: -0.035em;
+}
+.ring {
+  width: 9.25rem;
+  height: 9.25rem;
+}
+.ring text.of {
+  fill: var(--muted);
+  font: 500 0.75rem var(--mono);
+}
+.audit-area .card-head {
+  margin-bottom: 0.25rem;
+}
+details.check {
+  padding: 0.875rem 0;
+}
+details.check p {
+  margin: 0.5rem 0 0;
+  color: var(--soft);
+  font-size: 0.875rem;
+}
+details.check .evidence {
+  margin: 0.5rem 0 0;
+}
 p.error[role='alert'] {
   margin: 0;
   display: flex;
@@ -664,15 +930,6 @@ p.error[role='alert']::before {
 .login .error,
 .login p[role='status'] {
   text-align: left;
-}
-:root {
-  --status-h: 2.375rem;
-}
-body {
-  padding-bottom: var(--status-h);
-}
-.save-bar {
-  bottom: var(--status-h);
 }
 
 /* Console only. */

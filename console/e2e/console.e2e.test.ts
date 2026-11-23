@@ -98,6 +98,29 @@ describe.skipIf(!existsSync(chrome) || binary === null)('network console in a re
     await hasText(page, 'No unsaved changes.');
   });
 
+  it('opens the proxies and the rules, each with its editor', async () => {
+    await view(page, 'Proxies');
+    await button(page, 'Create proxy');
+    await hasText(page, 'Add to list');
+    await shot('console-proxies');
+    await button(page, 'Cancel');
+    await view(page, 'Rules');
+    await button(page, 'New rule');
+    await shot('console-rules');
+  });
+
+  it('will not remove the only relay this page connects through', async () => {
+    await view(page, 'Relays');
+    await page.type('#relay', 'wss://other.example');
+    await button(page, 'Add');
+    await click(page, `[aria-label="Remove ${RELAY}"]`);
+    await hasText(page, 'would lock you out');
+    await shot('console-replace');
+    await button(page, 'Close');
+    await button(page, 'Discard');
+    await hasText(page, 'No unsaved changes.');
+  });
+
   it('logged no page or console errors (the CSP holds on the production build)', () => {
     expect(problems).toEqual([]);
   });
