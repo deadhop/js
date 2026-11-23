@@ -307,6 +307,12 @@ describe('Overview', () => {
     }
   });
 
+  it('says when the strategy is off and only the first proxy is down', async () => {
+    setup({ getHealth: vi.fn().mockResolvedValue(health({ proxy_pool: proxyPool({ state: 'offline', mode: 'off', posture: 'off', reachable: 1, total: 2 }) })) });
+    const tile = (await screen.findByText('First proxy down')).closest('.tile')!;
+    expect(tile.textContent).toContain('1 of 2 reachable');
+  });
+
   it('warns when there is no proxy', async () => {
     setup();
     expect(await screen.findByText('Relays connect straight to this machine and can see its IP address.')).toBeTruthy();

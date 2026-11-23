@@ -93,6 +93,12 @@ describe('the proxy list', () => {
     const again = await screen.findByRole('list', { name: 'Proxy in use, per key' });
     expect([...again.querySelectorAll('li')].map((li) => li.textContent)).toEqual(['Public invoices: using tor', 'Administration: no proxy reachable', 'other: suspended']);
 
+    // With the strategy off, a key whose first proxy is down says so.
+    document.body.innerHTML = '';
+    setup({ list, mode: 'off' }, { ...down, mode: 'off' });
+    const off = await screen.findByRole('list', { name: 'Proxy in use, per key' });
+    expect([...off.querySelectorAll('li')].map((li) => li.textContent)[1]).toBe('Administration: its first proxy is down');
+
     // Nothing to tell apart when every proxy serves every key.
     document.body.innerHTML = '';
     setup({ list: TWO }, activePool({ lanes: [lane('invoices', 'a'), lane('admin', 'a')] }));
@@ -272,6 +278,25 @@ describe('the strategy', () => {
     expect(screen.getAllByText(/Rotation needs two reachable proxies/).length).toBeGreaterThan(0);
   });
 
+  it('can be off: only the first proxy is used, and the others say they are not', async () => {
+    const t = setup({ list: [...TWO, { ...entry('c', 'socks5://10.0.0.3:1080', 'rules'), pool: false }], mode: 'off' });
+    await screen.findByText('tor');
+    expect((screen.getByLabelText('Off') as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByText(/never switch/)).toBeTruthy();
+    expect(screen.getByText(/Choose Failover to fall back to the others/)).toBeTruthy();
+    expect(rows().map((r) => r.querySelector('.proxy-routes .badge')?.textContent ?? '')).toEqual(['', 'not used: strategy off', 'rules only']);
+    await fireEvent.click(screen.getByLabelText('Failover'));
+    expect(screen.queryByText('not used: strategy off')).toBeNull();
+    await save();
+    await waitFor(() => expect(t.updateSettings).toHaveBeenLastCalledWith({ proxies: { mode: 'failover' } }));
+  });
+
+  it('when off, counts a proxy as used if it is first for some key', async () => {
+    setup({ list: [entry('a', 'socks5://10.0.0.1:1080', 'tor', ['invoices']), entry('b', 'http://10.0.0.2:3128', 'vpn', ['admin'])], mode: 'off' });
+    await screen.findByText('tor');
+    expect(screen.queryByText('not used: strategy off')).toBeNull();
+  });
+
   it('is hidden until a second proxy is listed, then appears', async () => {
     setup({ list: [TWO[0]], mode: 'chaos' });
     await screen.findByText('tor');
@@ -315,6 +340,10 @@ describe('the strategy', () => {
       'Suspended: rotation needs 2 reachable proxies, 1 is. That proxy keeps carrying traffic.',
     );
     expect(await get(proxyPool({ state: 'offline', offline: 'kill_switch', total: 2 }))).toBe('Offline: no proxy is reachable · kill switch');
+    expect(await get(proxyPool({ state: 'offline', mode: 'off', offline: 'kill_switch', total: 2 }))).toBe('Offline: no proxy is reachable · kill switch');
+    expect(await get(proxyPool({ state: 'offline', mode: 'off', offline: 'kill_switch', reachable: 1, total: 2 }))).toBe(
+      'Offline: the first proxy is down and the strategy is off · kill switch',
+    );
     expect(await get(proxyPool({ state: 'direct' }))).toBe('No proxy is listed: relays connect straight.');
     expect(await get(proxyPool({ state: 'transparent', transparent: true }))).toBe('Transparent proxy declared: nothing is checked.');
   });
