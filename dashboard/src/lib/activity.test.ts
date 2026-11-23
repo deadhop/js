@@ -110,6 +110,11 @@ group('describe', () => {
     expect(describe(a, LIMITS.stuckMs)).toMatchObject({ tone: 'problem', text: 'No relay has accepted the request yet. Still trying.' });
   });
 
+  it('ignores a step left over from before the calls now waiting', () => {
+    const a = { ...none, calls: [call('get_health', 50)], steps: [{ key: '1:1', step: 'decrypt' as const, since: 10 }] };
+    expect(describe(a, 60)).toMatchObject({ tone: 'busy', text: 'Waiting for the service' });
+  });
+
   it('says when it waits for the signer, and hints at an approval when that is slow', () => {
     for (const [step, words] of [
       ['key', 'share your public key'],

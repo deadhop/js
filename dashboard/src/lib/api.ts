@@ -10,8 +10,7 @@ import {
   localSigner,
   type MineOptions,
 } from '@deadhop/client';
-import { activity, type Activity } from './activity.svelte';
-import type { ToolCaller } from '@deadhop/client';
+import type { ActivityListener, ToolCaller } from '@deadhop/client';
 import {
   AuditLogSchema,
   BackupListSchema,
@@ -195,6 +194,12 @@ export class PayApi extends InvoiceApi {
   }
 }
 
+/** What follows a connection's activity (the dashboard's status bar). */
+export interface Watcher {
+  listener(): ActivityListener;
+  track<T>(tool: string, work: () => Promise<T>): Promise<T>;
+}
+
 export interface Session {
   api: PayApi;
   /** Hex public key of the signed-in identity. */
@@ -209,7 +214,7 @@ export async function connect(
   config: Config,
   mining: MineOptions = {},
   timeoutMs = CONNECT_TIMEOUT_MS,
-  watch: Activity | null = activity,
+  watch: Watcher | null = null,
 ): Promise<Session> {
   const session = await connectService(signer, config, {
     mining,
@@ -229,7 +234,6 @@ export async function connect(
  * request with a throwaway key. Reveals nothing but online or not.
  */
 export async function probeService(config: Config, open: typeof connect = connect): Promise<void> {
-  // Not shown in the status bar: it is a check, not something the user asked for.
-  const session = await open(localSigner(undefined), config, {}, CONNECT_TIMEOUT_MS, null);
+  const session = await open(localSigner(undefined), config);
   await session.close();
 }

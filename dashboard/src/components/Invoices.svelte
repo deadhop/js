@@ -78,9 +78,9 @@
     }
   }
 
-  async function load() {
+  async function load(which: Status | '' = filter) {
     try {
-      const [s, page] = await Promise.all([api.getStats(), api.listInvoices(filter === '' ? {} : { status: filter })]);
+      const [s, page] = await Promise.all([api.getStats(), api.listInvoices(which === '' ? {} : { status: which })]);
       stats = s;
       invoices = page.invoices;
       nextBefore = page.next_before;
@@ -113,7 +113,9 @@
 
   // Runs on mount and again whenever the status filter changes.
   $effect(() => {
-    return poll(load, refreshMs);
+    // Read here, so a new filter loads again (the poll's own runs are untracked).
+    const which = filter;
+    return poll(() => load(which), refreshMs);
   });
 </script>
 

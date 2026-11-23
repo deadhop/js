@@ -65,6 +65,15 @@ describe('Checkout', () => {
     expect(getInvoice.mock.calls.length).toBe(calls);
   });
 
+  it('asks once per interval, not again on every answer', async () => {
+    // After a few calls it stops answering, so a loop fails the count instead of hanging.
+    let n = 0;
+    const getInvoice = vi.fn(() => (++n > 3 ? new Promise(() => undefined) : Promise.resolve(invoice())));
+    setup(getInvoice, { pollMs: 10_000 });
+    await new Promise((r) => setTimeout(r, 100));
+    expect(getInvoice).toHaveBeenCalledTimes(1);
+  });
+
   it('shows an expired invoice without payment details', async () => {
     setup(vi.fn().mockResolvedValue(invoice({ status: 'expired' })));
     await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Expired'));

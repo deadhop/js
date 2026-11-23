@@ -179,8 +179,9 @@ export function describe(a: Pick<Activity, 'steps' | 'calls' | 'task' | 'lastAns
     return { tone: 'idle', what: a.lastAnswer === null ? 'Ready' : 'Up to date', text: '', since: null, waiting };
   }
   const elapsed = now - since;
-  // The oldest unfinished step says where the wait is.
-  const step = a.steps[0];
+  // The oldest unfinished step of the calls now waiting says where the wait is
+  // (one left from before, like a signer prompt never answered, does not).
+  const step = a.steps.find((s) => s.since >= since);
   if (step !== undefined && step.step !== 'publish') {
     const slow = now - step.since >= limits.slowMs;
     return {
