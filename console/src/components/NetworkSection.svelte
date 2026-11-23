@@ -10,7 +10,9 @@
   import { REASONS, destination, firstRule, proxyName } from '@deadhop/network-ui/lib/routes';
   import { mapRows, trace } from '@deadhop/network-ui/lib/routeview';
   import KeyChips from '@deadhop/network-ui/components/KeyChips.svelte';
+  import I2pRegistries from '@deadhop/network-ui/components/I2pRegistries.svelte';
   import ProxyPool from '@deadhop/network-ui/components/ProxyPool.svelte';
+  import { i2pProxy } from '@deadhop/network-ui/lib/proxy';
   import RouteMap from '@deadhop/network-ui/components/RouteMap.svelte';
   import Rules from '@deadhop/network-ui/components/Rules.svelte';
 
@@ -371,5 +373,8 @@
   </section>
 
   {:else}
-    <ProxyPool {api} {keys} proxies={form.proxies} live={view.settings.proxies} pool={health?.proxy_pool ?? null} locked={view.proxy_locked} />
+    <ProxyPool {api} {keys} proxies={form.proxies} live={view.settings.proxies} pool={health?.proxy_pool ?? null} locked={view.proxy_locked} registriesAt="below" />
+    {#if i2pProxy(form.proxies)}
+      <I2pRegistries proxies={form.proxies} router={proxyName(i2pProxy(form.proxies)!)} />
+    {/if}
   {/if}

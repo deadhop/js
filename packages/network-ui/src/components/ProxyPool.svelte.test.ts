@@ -13,12 +13,12 @@ const status = (e: ProxyEntry, over: Partial<Pool['proxies'][number]> = {}): Poo
 const lane = (key: string, active: string | null, state: Pool['state'] = 'active') => ({ key, state, active, reachable: 1, next_switch_at: null, uses_default: true });
 const i2pRule = (to: Rule['to']): Rule => ({ name: '', match: ['*.i2p'], keys: [], to, fallback: 'offline' });
 
-function setup(over: Partial<ProxySettings> = {}, opts: { pool?: Pool | null; locked?: boolean; live?: ProxySettings } = {}) {
+function setup(over: Partial<ProxySettings> = {}, opts: { pool?: Pool | null; locked?: boolean; live?: ProxySettings; registriesAt?: string } = {}) {
   // The form settings the parent hands over are deeply reactive, and the view changes them in place.
   const proxies: ProxySettings = $state({ ...settings().proxies, ...over });
   const live = opts.live ?? { ...settings().proxies, ...over, list: [...(over.list ?? [])] };
   const api = { checkProxy: vi.fn().mockResolvedValue(proxyCheck()) };
-  render(ProxyPool, { props: { api: api as unknown as NetworkApi, keys: keyInfos(), proxies, live, pool: opts.pool ?? null, locked: opts.locked ?? false } });
+  render(ProxyPool, { props: { api: api as unknown as NetworkApi, keys: keyInfos(), proxies, live, pool: opts.pool ?? null, locked: opts.locked ?? false, ...(opts.registriesAt === undefined ? {} : { registriesAt: opts.registriesAt }) } });
   return { api, proxies };
 }
 
@@ -278,6 +278,12 @@ describe('an I2P router', () => {
     await fireEvent.click(button('Edit proxy 1'));
     expect((screen.getByLabelText('Type') as HTMLSelectElement).value).toBe('i2p');
     expect((screen.getByRole('option', { name: 'I2P router' }) as HTMLOptionElement).disabled).toBe(false);
+  });
+
+  it('says where the page keeps the I2P name registries', () => {
+    const router = entry('r', 'http://127.0.0.1:4444', '', { pool: false, i2p: true });
+    setup({ list: [router] }, { registriesAt: 'below' });
+    expect(screen.getByText('http://127.0.0.1:4444 carries relays only when a rule sends them to it. Where .i2p names are looked up is below.')).toBeTruthy();
   });
 
   it('once saved, offers a rule that sends .i2p relays through it', async () => {

@@ -51,6 +51,6 @@ export const NetworkHealthSchema = z.object({
   proxy_pool: ProxyPoolSchema,
 });
 
-// The schemas above produce the shapes the network views take.
-export const asSettings = (s: z.infer<typeof NetworkSettingsSchema>): NetworkSettings => s;
-export const asHealth = (h: z.infer<typeof NetworkHealthSchema>): NetworkHealth => h;
+// The schemas above produce the shapes the network views take (checked when type-checking).
+type Fits<A, B> = A extends B ? true : never;
+export type SchemasFit = [Fits<z.infer<typeof NetworkSettingsSchema>, NetworkSettings>, Fits<z.infer<typeof NetworkHealthSchema>, NetworkHealth>];

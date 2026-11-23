@@ -12,11 +12,14 @@
   let {
     api,
     pageRelays,
+    networkView = 'routes',
     confirm = (message: string) => window.confirm(message),
   }: {
     api: ConsoleApi;
     /** Relays this page itself connects through. */
     pageRelays: string[];
+    /** The view to open on. */
+    networkView?: 'routes' | 'relays' | 'proxies' | 'rules';
     confirm?: (message: string) => boolean;
   } = $props();
 
@@ -139,14 +142,13 @@
     form!.relay_keys = relayKeysFor(form!.relays, { ...form!.relay_keys, [url]: assigned }, ids);
   }
 
-  const keys = $derived(view?.keys ?? []);
+  const keys = $derived(view!.keys);
   const ids = $derived(keys.map((k) => k.id));
   // This page signs in through the administration key: it must keep one of the relays this page uses.
   const unreachable = $derived(form !== null && !pageRelays.some((r) => relaysOf(form!.relays, form!.relay_keys, ADMIN, ids).includes(r)));
 
   /** What the save bar says: a problem with the form, or how many settings would change. */
   const pending = $derived.by((): { count: number; problem: string; reconnects: boolean } => {
-    if (form === null) return { count: 0, problem: '', reconnects: false };
     const d = diff();
     if (typeof d === 'string') return { count: 0, problem: d, reconnects: false };
     return { count: Object.keys(d).length, problem: '', reconnects: d.relays !== undefined || d.relay_keys !== undefined || d.proxies !== undefined };
@@ -179,7 +181,7 @@
       void save();
     }}
   >
-    <NetworkSection {api} {view} bind:form bind:error {pageRelays} {confirm} {removeRelay} {useRelay} />
+    <NetworkSection {api} {view} bind:form bind:error {pageRelays} {networkView} {confirm} {removeRelay} {useRelay} />
 
     <div class="save-bar">
       <div class="save-inner">
