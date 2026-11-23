@@ -2,7 +2,7 @@
 // network part of its health. A service's own API client satisfies this as it
 // is (the dashboard's PayApi does), so the views work for any deadhop service
 // that serves the network tools.
-import type { Health, PrivacyAudit, ProxyCheck, RelayHealthReport, RelayHistory } from './schemas';
+import type { Health, I2pLookup, PrivacyAudit, ProxyCheck, RelayHealthReport, RelayHistory } from './schemas';
 
 /** The parts of `get_health` the network views read. */
 export type NetworkHealth = Pick<Health, 'keys' | 'relays' | 'relay_health' | 'proxy_pool'>;
@@ -13,4 +13,5 @@ export interface NetworkApi {
   getRelayHistory(window?: RelayHistory['window']): Promise<RelayHistory>;
   getPrivacyAudit(): Promise<PrivacyAudit>;
   getHealth(): Promise<NetworkHealth>;
+  resolveI2pName(name: string): Promise<I2pLookup>;
 }
