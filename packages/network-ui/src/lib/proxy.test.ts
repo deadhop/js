@@ -86,6 +86,12 @@ describe('the proxy patch', () => {
     expect(proxiesPatch(base, form)).toEqual({ list: [{ name: 'new', url: 'socks5://n:1', keys: [], pool: true }, { id: 'a', name: 'tor', url: 'socks5://u:***@h:1', keys: [], pool: true }] });
   });
 
+  it('sends the rules and registries whole when either changes', () => {
+    const rule = { name: 'I2P', match: ['*.i2p'], keys: [], to: { proxy: 'a' }, fallback: 'offline' as const };
+    const form = { ...structuredClone(live), rules: [rule], i2p_registries: [live.i2p_registries[0]] };
+    expect(proxiesPatch(live, form)).toEqual({ rules: [rule], i2p_registries: [live.i2p_registries[0]] });
+  });
+
   it('reports a problem with an interval', () => {
     const f = (over: Partial<typeof live>) => proxiesPatch(live, { ...live, ...over });
     expect(f({ rotate_secs: NaN })).toBe('Fill in every interval.');
