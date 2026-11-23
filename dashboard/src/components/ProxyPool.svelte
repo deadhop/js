@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { PayApi } from '../lib/api';
   import { formatDuration } from '../lib/format';
-  import { keyTag, toggled } from '../lib/keys';
+  import { keyTag, toggled, usersOf } from '../lib/keys';
   import {
     I2P_PORT,
     MAX_PROXIES,
@@ -50,6 +50,7 @@
   } = $props();
 
   const MODES: { value: ProxyMode; title: string; text: string }[] = [
+    { value: 'off', title: 'Off', text: 'Use the first proxy in the list and never switch. While it is down, the policy below applies.' },
     { value: 'failover', title: 'Failover', text: 'Use the first proxy in the list. If it is down, use the next one.' },
     { value: 'round_robin', title: 'Round-robin', text: 'Go around the list, one change at a set interval (not per connection).' },
     { value: 'chaos', title: 'Chaos', text: 'Switch to a random other proxy after a random time between a shortest and a longest interval.' },
@@ -62,6 +63,15 @@
   ];
 
   const full = $derived(proxies.list.length >= MAX_PROXIES);
+
+  /** With the strategy off, the default-route proxies that are first for no key: never used. */
+  const unused = $derived.by((): Set<string> => {
+    if (proxies.mode !== 'off') return new Set();
+    const ids = keys.map((k) => k.id);
+    const route = poolOf(proxies);
+    const used = new Set(ids.flatMap((k) => route.filter((p) => usersOf(p.keys, ids).includes(k)).slice(0, 1).map((p) => p.id)));
+    return new Set(route.filter((p) => !used.has(p.id)).map((p) => p.id));
+  });
 
   // ---- the list ----
   let dragFrom = $state<number | null>(null);
@@ -200,7 +210,7 @@
     return pool.lanes.map((l) => {
       const label = keys.find((k) => k.id === l.key)?.label ?? keyTag(l.key);
       const proxy = pool!.proxies.find((p) => p.id === l.active);
-      const using = proxy ? `using ${proxy.name === '' ? proxy.url : proxy.name}` : l.state === 'offline' ? 'no proxy reachable' : l.state;
+      const using = proxy ? `using ${proxy.name === '' ? proxy.url : proxy.name}` : l.state === 'offline' ? (pool!.mode === 'off' ? 'its first proxy is down' : 'no proxy reachable') : l.state;
       return `${label}: ${using}`;
     });
   });
@@ -220,7 +230,7 @@
       case 'suspended':
         return `Suspended: rotation needs 2 reachable proxies, ${pool.reachable} is. That proxy keeps carrying traffic.`;
       default:
-        return `Offline: no proxy is reachable · ${policy}`;
+        return pool.mode === 'off' && pool.reachable > 0 ? `Offline: the first proxy is down and the strategy is off · ${policy}` : `Offline: no proxy is reachable · ${policy}`;
     }
   });
 </script>
@@ -309,7 +319,7 @@
             </span>
             <div class="proxy-routes">
               <label class="check pool-toggle"><input type="checkbox" checked={entry.pool} aria-label={`Proxy ${i + 1} in the default route`} onchange={(e) => inPool(i, e.currentTarget.checked)} /> In the default route</label>
-              {#if !entry.pool}<span class="badge not_checked">rules only</span>{/if}
+              {#if !entry.pool}<span class="badge not_checked">rules only</span>{:else if unused.has(entry.id)}<span class="badge not_checked">not used: strategy off</span>{/if}
               <span class="hint">{carrying(entry.id)}</span>
             </div>
             <div class="proxy-foot">
@@ -438,7 +448,9 @@
             </div>
             <p class="hint">{`A random time in between, now ${shortDuration(proxies.chaos_min_secs)} to ${shortDuration(proxies.chaos_max_secs)}.`}</p>
           {/if}
-          {#if proxies.mode !== 'failover'}
+          {#if proxies.mode === 'off'}
+            <p class="hint">Only the first proxy in the default route is used. Choose Failover to fall back to the others while it is down.</p>
+          {:else if proxies.mode !== 'failover'}
             <p class="hint">Rotation needs two reachable proxies. With only one, it is suspended and that proxy keeps carrying traffic.</p>
           {:else}
             <p class="hint">After a failure the service returns to an earlier proxy once it has stayed up for 2 minutes.</p>
