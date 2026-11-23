@@ -2,11 +2,11 @@
   import type { PayApi } from '../lib/api';
   import type { Info, Invoice } from '../lib/schemas';
   import Invoices from './Invoices.svelte';
-  import Connectivity from './Connectivity.svelte';
+  import Connectivity from '@deadhop/network-ui/components/Connectivity.svelte';
   import Maintenance from './Maintenance.svelte';
   import Operators from './Operators.svelte';
   import Overview from './Overview.svelte';
-  import PrivacyAudit from './PrivacyAudit.svelte';
+  import PrivacyAudit from '@deadhop/network-ui/components/PrivacyAudit.svelte';
   import Settings from './Settings.svelte';
 
   type Tab = 'overview' | 'privacy' | 'connectivity' | 'invoices' | 'network' | 'settings' | 'operators' | 'maintenance';

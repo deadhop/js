@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import Connectivity from './Connectivity.svelte';
-import type { PayApi } from '../lib/api';
+import type { NetworkApi } from '../lib/network-api';
 import { health, relayHistory, relayStats } from '../test-helpers';
 import type { RelayHealth } from '../lib/schemas';
 
@@ -17,7 +17,7 @@ function setup(over: Record<string, ReturnType<typeof vi.fn>> = {}) {
     ...over,
   };
   const onBack = vi.fn();
-  render(Connectivity, { props: { api: api as unknown as PayApi, refreshMs: 60_000, onBack } as never });
+  render(Connectivity, { props: { api: api as unknown as NetworkApi, refreshMs: 60_000, onBack } as never });
   return { ...api, onBack };
 }
 
@@ -111,7 +111,7 @@ describe('Connectivity', () => {
 
   it('reloads on a timer', async () => {
     const api = { getRelayHistory: vi.fn().mockResolvedValue(relayHistory()), getHealth: vi.fn().mockResolvedValue(health()), checkRelays: vi.fn() };
-    render(Connectivity, { props: { api: api as unknown as PayApi, refreshMs: 20, onBack: vi.fn() } as never });
+    render(Connectivity, { props: { api: api as unknown as NetworkApi, refreshMs: 20, onBack: vi.fn() } as never });
     await waitFor(() => expect(api.getRelayHistory.mock.calls.length).toBeGreaterThan(2));
   });
 });

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { flushSync } from 'svelte';
-import { Activity, LIMITS } from '../lib/activity.svelte';
+import { Activity, LIMITS } from '@deadhop/network-ui/lib/activity.svelte';
 import StatusBar from './StatusBar.svelte';
 
 function rig() {

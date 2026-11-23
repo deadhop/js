@@ -24,6 +24,17 @@ describe('KeyChips', () => {
     expect((screen.getByLabelText('Relay used by Administration') as HTMLInputElement).disabled).toBe(true);
   });
 
+  it('pins a required key on and says why on hover', () => {
+    render(KeyChips, { props: { keys: keyInfos(), assigned: [], label: 'Relay', onchange: vi.fn(), required: ['admin'], requiredWhy: 'this page connects through it' } });
+    const admin = screen.getByLabelText('Relay used by Administration') as HTMLInputElement;
+    expect(admin.disabled).toBe(true);
+    expect(admin.closest('label')?.getAttribute('title')).toBe('Administration: this page connects through it');
+    expect(admin.closest('label')?.classList.contains('pinned')).toBe(true);
+    const invoices = screen.getByLabelText('Relay used by Public invoices') as HTMLInputElement;
+    expect(invoices.disabled).toBe(false);
+    expect(invoices.closest('label')?.hasAttribute('title')).toBe(false);
+  });
+
   it('is not shown while there is only one key', () => {
     render(KeyChips, { props: { keys: keyInfos().slice(0, 1), assigned: [], label: 'Relay', onchange: vi.fn() } });
     expect(screen.queryByRole('group')).toBeNull();

@@ -1,10 +1,10 @@
 <script lang="ts">
   import Loading from './Loading.svelte';
-  import type { PayApi } from '../lib/api';
+  import type { NetworkApi } from '../lib/network-api';
   import type { PrivacyAudit, PrivacyCheck } from '../lib/schemas';
   import { formatTime } from '../lib/format';
 
-  let { api, onBack }: { api: PayApi; onBack: () => void } = $props();
+  let { api, onBack }: { api: NetworkApi; onBack: () => void } = $props();
 
   let audit = $state<PrivacyAudit | null>(null);
   let error = $state('');

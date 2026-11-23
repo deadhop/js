@@ -3,7 +3,7 @@
 // what the page has to work out before saving: the route of a relay being
 // added, the preview of a rule being edited, and the guards on a save. The
 // pattern cases in fixtures/route-patterns.json run against both copies.
-import type { ProxySettings, Rule, RouteReason, RouteTo, Settings } from './schemas';
+import type { ProxySettings, Rule, RouteReason, RouteTo, NetworkSettings } from './schemas';
 
 export const MAX_RULES = 16;
 export const MAX_PATTERNS = 16;
@@ -99,7 +99,7 @@ const applies = (r: Rule, key: string, relay: string) => (r.keys.length === 0 ||
 export const firstRule = (rules: Rule[], key: string, relay: string) => rules.findIndex((r) => applies(r, key, relay));
 
 /** The relays one key connects to, in list order. */
-function relaysFor(s: Pick<Settings, 'relays' | 'relay_keys'>, key: string, ids: string[]): string[] {
+function relaysFor(s: Pick<NetworkSettings, 'relays' | 'relay_keys'>, key: string, ids: string[]): string[] {
   return s.relays.filter((r) => {
     const found = Object.entries(s.relay_keys).find(([u]) => bare(u) === bare(r));
     const users = found === undefined || found[1].length === 0 ? ids : found[1];
@@ -120,7 +120,7 @@ export interface Route {
 }
 
 /** Where each of `key`'s relays goes (the service's resolve). `up` says whether a proxy answered its last probe. */
-export function resolve(s: Pick<Settings, 'relays' | 'relay_keys' | 'proxies'>, key: string, ids: string[], fallbackRoute: DefaultRoute, up: (id: string) => boolean): Route[] {
+export function resolve(s: Pick<NetworkSettings, 'relays' | 'relay_keys' | 'proxies'>, key: string, ids: string[], fallbackRoute: DefaultRoute, up: (id: string) => boolean): Route[] {
   const { rules, list, transparent } = s.proxies;
   return relaysFor(s, key, ids).map((relay) => {
     const i = firstRule(rules, key, relay);
@@ -145,7 +145,7 @@ export function resolve(s: Pick<Settings, 'relays' | 'relay_keys' | 'proxies'>, 
 }
 
 /** Whether some relay of `key` may take the default route. */
-export function usesDefault(s: Pick<Settings, 'relays' | 'relay_keys' | 'proxies'>, key: string, ids: string[]): boolean {
+export function usesDefault(s: Pick<NetworkSettings, 'relays' | 'relay_keys' | 'proxies'>, key: string, ids: string[]): boolean {
   const rules = s.proxies.rules;
   return relaysFor(s, key, ids).some((relay) => {
     const i = firstRule(rules, key, relay);
@@ -157,7 +157,7 @@ export function usesDefault(s: Pick<Settings, 'relays' | 'relay_keys' | 'proxies
 
 /** Why the rule list cannot be saved, or an empty string (the service's checks, and this page's own way in). */
 export function rulesProblem(
-  s: Pick<Settings, 'relays' | 'relay_keys' | 'proxies'>,
+  s: Pick<NetworkSettings, 'relays' | 'relay_keys' | 'proxies'>,
   keys: { id: string; label: string }[],
   savedProxies: ProxySettings['list'],
   dashboardRelays: string[],
