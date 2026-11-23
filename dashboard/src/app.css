@@ -3071,6 +3071,10 @@ body {
   .statusbar.raised {
     bottom: calc(52px + env(safe-area-inset-bottom, 0px));
   }
+  /* The save bar rests on the status bar, which rests on the tabs. */
+  .save-bar {
+    bottom: calc(52px + env(safe-area-inset-bottom, 0px) + var(--status-h));
+  }
   .status-inner {
     padding: 0.375rem 1rem;
   }

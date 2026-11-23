@@ -25,10 +25,10 @@
   let now = $state(0);
   let copied = $state(false);
 
-  async function refresh() {
+  async function refresh(which: string) {
     now = clock();
     try {
-      invoice = await api.getInvoice(id);
+      invoice = await api.getInvoice(which);
       error = '';
     } catch (e) {
       error = (e as Error).message;
@@ -36,8 +36,10 @@
   }
 
   $effect(() => {
+    // Read here, so another invoice loads again (the poll's own runs are untracked).
+    const which = id;
     // A settled invoice never changes again.
-    return poll(() => (invoice?.status === 'confirmed' ? Promise.resolve() : refresh()), pollMs);
+    return poll(() => (invoice?.status === 'confirmed' ? Promise.resolve() : refresh(which)), pollMs);
   });
 
   async function copyAddress(address: string) {

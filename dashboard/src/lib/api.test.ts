@@ -204,7 +204,7 @@ describe('connect', () => {
   it('opens an encrypted session and mines work for the public', async () => {
     mocks.callTool.mockResolvedValue(toolResult(info({ pow_bits: 6 })));
     const signer = new PrivateKeySigner();
-    const session = await connect(signer, config, { batch: 64 });
+    const session = await connect(signer, config, { batch: 64 }, undefined, activity);
     expect(session.pubkey).toBe(await signer.getPublicKey());
     expect(session.info.pow_bits).toBe(6);
     expect(mocks.callTool).toHaveBeenCalledWith({ name: 'get_info', arguments: {} });
@@ -239,7 +239,7 @@ describe('connect', () => {
     mocks.callTool.mockResolvedValue(toolResult(info()));
     await probeService(config);
     expect(mocks.callTool).toHaveBeenCalledWith({ name: 'get_info', arguments: {} });
-    // A probe is not shown in the status bar.
+    // Not watched unless asked: a probe is not shown in the status bar.
     expect((mocks.transports[0].options as { relayHandler: string[] }).relayHandler).toEqual(config.relays);
     expect(mocks.close).toHaveBeenCalledTimes(1);
     const open = vi.fn().mockRejectedValue(new Error('no answer'));

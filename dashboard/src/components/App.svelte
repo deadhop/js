@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { NostrSigner } from '@contextvm/sdk';
-  import { ApiError, connect as defaultConnect, probeService, type Session } from '../lib/api';
+  import { ApiError, CONNECT_TIMEOUT_MS, connect as defaultConnect, probeService, type Session } from '../lib/api';
   import { adminTarget, loadConfig as defaultLoadConfig } from '../lib/config';
   import { nip19 } from 'nostr-tools';
   import { shortKey } from '../lib/format';
@@ -18,7 +18,8 @@
 
   let {
     loadConfig = defaultLoadConfig,
-    connect = defaultConnect,
+    // Every call of the signed-in session shows in the status bar.
+    connect = (signer, config) => defaultConnect(signer, config, {}, CONNECT_TIMEOUT_MS, activity),
     extension = () => (window as unknown as { nostr?: Nip07 }).nostr,
     probe = probeService,
   }: {
@@ -45,7 +46,7 @@
       // Operators sign in through the administration key (and its relays); a payment
       // link is for the public, who use the invoices key.
       const target = kind === 'guest' ? config! : adminTarget(config!);
-      session = await activity.run(kind === 'guest' ? 'Opening the invoice' : 'Signing in', () => connect(signer, target));
+      session = await activity.run(route.name === 'pay' ? 'Opening the invoice' : 'Signing in', () => connect(signer, target));
     } catch (e) {
       // The administration key answers operators only.
       error = e instanceof ApiError && e.code === 'unauthorized' ? 'This key is not an operator of this service.' : (e as Error).message;
