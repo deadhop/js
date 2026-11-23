@@ -180,7 +180,7 @@ export const PrivacyAuditSchema = z.strictObject({
 });
 export type PrivacyAudit = z.infer<typeof PrivacyAuditSchema>;
 
-export const ProxyModeSchema = z.enum(['failover', 'round_robin', 'chaos']);
+export const ProxyModeSchema = z.enum(['off', 'failover', 'round_robin', 'chaos']);
 export type ProxyMode = z.infer<typeof ProxyModeSchema>;
 export const OfflinePolicySchema = z.enum(['kill_switch', 'admin_only', 'invoicing_only', 'open']);
 export type OfflinePolicy = z.infer<typeof OfflinePolicySchema>;
