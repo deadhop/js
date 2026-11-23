@@ -1,5 +1,7 @@
 import { mount } from 'svelte';
 import './app.css';
+import '@deadhop/network-ui/styles.css';
+import './app-end.css';
 import App from './components/App.svelte';
 
 const target = document.getElementById('app')!;

@@ -1,0 +1,218 @@
+/* After the network views' styles (@deadhop/network-ui/styles.css), in this order. */
+/* ---- Status bar and loading ----
+   The status bar sits at the bottom of every page and says what the
+   dashboard is waiting for. Pages keep room for it, and the settings save
+   bar rests on top of it. */
+:root {
+  --status-h: 2.375rem;
+}
+body {
+  padding-bottom: var(--status-h);
+}
+.save-bar {
+  bottom: var(--status-h);
+}
+.statusbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 6;
+  background: var(--card);
+  border-top: 1.5px solid var(--line);
+  font-size: 0.8125rem;
+  --tone: var(--ok);
+}
+.statusbar.busy {
+  --tone: var(--accent);
+}
+.statusbar.slow {
+  --tone: var(--warn);
+}
+.statusbar.problem {
+  --tone: var(--bad);
+  border-top-color: var(--bad);
+}
+.status-inner {
+  max-width: var(--page);
+  min-height: var(--status-h);
+  margin: 0 auto;
+  padding: 0.375rem 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+.status-dot {
+  width: 0.5625rem;
+  height: 0.5625rem;
+  border-radius: 50%;
+  flex: none;
+  background: var(--tone);
+}
+.statusbar.busy .status-dot,
+.statusbar.slow .status-dot {
+  animation: status-pulse 1.2s ease-in-out infinite;
+}
+.status-text {
+  margin: 0 auto 0 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--soft);
+}
+.status-text strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.statusbar.slow .status-text span,
+.statusbar.problem .status-text span {
+  color: var(--tone);
+}
+.status-time {
+  flex: none;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.status-toggle {
+  flex: none;
+  font-size: 0.8125rem;
+}
+.status-detail {
+  max-width: var(--page);
+  margin: 0 auto;
+  padding: 0.75rem 1.5rem 0.25rem;
+  border-bottom: 1.5px dashed var(--line);
+}
+.status-detail p {
+  margin: 0 0 0.5rem;
+}
+.status-detail ul {
+  list-style: none;
+  margin: 0 0 0.5rem;
+  padding: 0;
+}
+.status-detail li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.25rem 0;
+}
+.status-failure {
+  color: var(--bad);
+}
+@keyframes status-pulse {
+  50% {
+    opacity: 0.35;
+    transform: scale(0.75);
+  }
+}
+
+/* A first load: the mark's hop, moving. */
+.loading {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 2rem 0;
+}
+.hop {
+  width: 3rem;
+  height: 3rem;
+  flex: none;
+  color: var(--accent);
+  overflow: visible;
+}
+.hop-dot,
+.hop-box {
+  fill: currentColor;
+}
+.hop-arc {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.8;
+  stroke-linecap: round;
+  stroke-dasharray: 4.2 3.6;
+  animation: hop-travel 0.9s linear infinite;
+}
+.hop-dot {
+  transform-box: fill-box;
+  transform-origin: center bottom;
+  animation: hop-jump 0.9s ease-in-out infinite;
+}
+.hop-box {
+  animation: hop-land 0.9s ease-in-out infinite;
+}
+.loading.slow .hop {
+  color: var(--warn);
+}
+.loading.problem .hop {
+  color: var(--bad);
+}
+.loading-label {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 1.125rem;
+}
+.loading-step {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+.loading.slow .loading-step {
+  color: var(--warn);
+}
+.loading.problem .loading-step {
+  color: var(--bad);
+}
+@keyframes hop-travel {
+  to {
+    stroke-dashoffset: -7.8;
+  }
+}
+@keyframes hop-jump {
+  0%,
+  100% {
+    transform: translateY(0) scaleY(1);
+  }
+  15% {
+    transform: translateY(0) scaleY(0.8);
+  }
+  50% {
+    transform: translateY(-4px) scaleY(1.05);
+  }
+}
+@keyframes hop-land {
+  0%,
+  60%,
+  100% {
+    opacity: 1;
+  }
+  80% {
+    opacity: 0.6;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hop-arc,
+  .hop-dot,
+  .hop-box,
+  .statusbar .status-dot {
+    animation: none;
+  }
+}
+/* Phones: the operator tabs are a bar at the bottom; the status bar sits on it. */
+@media (max-width: 560px) {
+  .statusbar.raised {
+    bottom: calc(52px + env(safe-area-inset-bottom, 0px));
+  }
+  /* The save bar rests on the status bar, which rests on the tabs. */
+  .save-bar {
+    bottom: calc(52px + env(safe-area-inset-bottom, 0px) + var(--status-h));
+  }
+  .status-inner {
+    padding: 0.375rem 1rem;
+  }
+  .status-time {
+    display: none;
+  }
+}
