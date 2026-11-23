@@ -1,7 +1,7 @@
 <script lang="ts">
   import { REASONS, firstRule, proxyName } from '../lib/routes';
   import { keyLabel, mapRows, proxySummaries, reaches, ruleText, tiles } from '../lib/routeview';
-  import type { KeyInfo, ProxyPool, Settings } from '../lib/schemas';
+  import type { KeyInfo, ProxyPool, NetworkSettings } from '../lib/schemas';
 
   // The top-level view: where every relay goes, as the service decided it,
   // and what each proxy is carrying. Read-only; changes are made in the
@@ -13,7 +13,7 @@
   }: {
     keys: KeyInfo[];
     /** The saved settings (the routes are the service's, made from these). */
-    live: Settings;
+    live: NetworkSettings;
     /** What the service reports. */
     pool: ProxyPool;
   } = $props();

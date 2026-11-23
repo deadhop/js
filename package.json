@@ -8,6 +8,7 @@
     "packages/solid",
     "packages/svelte",
     "packages/e2e",
+    "packages/network-ui",
     "dashboard"
   ],
   "devDependencies": {

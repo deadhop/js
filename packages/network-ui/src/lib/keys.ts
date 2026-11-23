@@ -1,7 +1,7 @@
 // The service's keys and which relays and proxies each one uses. A relay or a
 // proxy lists the keys that may use it; an empty list is every key.
 import { usesDefault } from './routes';
-import type { KeyInfo, ProxySettings, Settings } from './schemas';
+import type { KeyInfo, ProxySettings, NetworkSettings } from './schemas';
 
 export const ADMIN = 'admin';
 const bare = (url: string) => url.replace(/\/$/, '');
@@ -10,7 +10,7 @@ const bare = (url: string) => url.replace(/\/$/, '');
 export const usersOf = (assigned: string[] | undefined, ids: string[]): string[] => (assigned === undefined || assigned.length === 0 ? ids : assigned);
 
 /** Which keys use a relay, by the address it is listed under (a trailing slash does not matter). */
-export function relayUsers(relayKeys: Settings['relay_keys'], url: string, ids: string[]): string[] {
+export function relayUsers(relayKeys: NetworkSettings['relay_keys'], url: string, ids: string[]): string[] {
   const found = Object.entries(relayKeys).find(([u]) => bare(u) === bare(url));
   return usersOf(found?.[1], ids);
 }
@@ -23,8 +23,8 @@ export function toggled(assigned: string[], id: string, on: boolean, ids: string
 }
 
 /** The relay map as saved: only relays with a restriction, only relays that are listed. */
-export function relayKeysFor(relays: string[], relayKeys: Settings['relay_keys'], ids: string[]): Settings['relay_keys'] {
-  const out: Settings['relay_keys'] = {};
+export function relayKeysFor(relays: string[], relayKeys: NetworkSettings['relay_keys'], ids: string[]): NetworkSettings['relay_keys'] {
+  const out: NetworkSettings['relay_keys'] = {};
   for (const url of relays) {
     const users = relayUsers(relayKeys, url, ids);
     if (users.length < ids.length) out[url] = users;
@@ -33,7 +33,7 @@ export function relayKeysFor(relays: string[], relayKeys: Settings['relay_keys']
 }
 
 /** A stable text of a relay map, to tell whether it changed. */
-export const relayKeysText = (m: Settings['relay_keys']) =>
+export const relayKeysText = (m: NetworkSettings['relay_keys']) =>
   JSON.stringify(
     Object.entries(m)
       .map(([u, k]) => [bare(u), [...k].sort()] as const)
@@ -41,14 +41,14 @@ export const relayKeysText = (m: Settings['relay_keys']) =>
   );
 
 /** The relays one key connects to. */
-export const relaysOf = (relays: string[], relayKeys: Settings['relay_keys'], id: string, ids: string[]) =>
+export const relaysOf = (relays: string[], relayKeys: NetworkSettings['relay_keys'], id: string, ids: string[]) =>
   relays.filter((r) => relayUsers(relayKeys, r, ids).includes(id));
 
 /** The proxies one key uses. */
 export const proxiesOf = (proxies: ProxySettings, id: string, ids: string[]) => proxies.list.filter((p) => usersOf(p.keys, ids).includes(id));
 
 /** Why this assignment cannot be saved, or an empty string. */
-export function assignmentProblem(keys: KeyInfo[], form: Settings): string {
+export function assignmentProblem(keys: KeyInfo[], form: NetworkSettings): string {
   const ids = keys.map((k) => k.id);
   for (const k of keys) {
     if (relaysOf(form.relays, form.relay_keys, k.id, ids).length === 0) return `No relay is assigned to ${k.label}: it could not be reached. Give it one.`;
@@ -71,7 +71,7 @@ export const keyTag = (id: string) => TAGS[id] ?? id;
  * cannot be switched off for that relay, and removing the relay first asks for
  * a replacement.
  */
-export function dependents(relays: string[], relayKeys: Settings['relay_keys'], url: string, ids: string[], dashboard: string[]): string[] {
+export function dependents(relays: string[], relayKeys: NetworkSettings['relay_keys'], url: string, ids: string[], dashboard: string[]): string[] {
   const same = (a: string) => bare(a) === bare(url);
   const isDash = (r: string) => dashboard.some((d) => bare(d) === bare(r));
   return ids.filter((k) => {

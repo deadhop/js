@@ -1,7 +1,7 @@
 <script lang="ts">
   // A small line chart drawn as SVG: no chart library, nothing executed from data.
   import type { Series } from '../lib/schemas';
-  import { formatSats, formatTime } from '../lib/format';
+  import { formatSats, formatTime } from '@deadhop/network-ui/lib/format';
 
   let { series, metric = 'sat' }: { series: Series; metric?: 'sat' | 'count' } = $props();
 

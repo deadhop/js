@@ -1,6 +1,6 @@
 // Proxies as form fields and back. The service stores each URL and shows its
 // password as `***`; the password stays with the proxy's id unless re-entered.
-import type { ProxiesPatch, ProxyInput } from './api';
+import type { ProxiesPatch, ProxyInput } from './network-api';
 import type { ProxyEntry, ProxySettings, Rule } from './schemas';
 /** `i2p` is an I2P router's HTTP proxy: stored as `http://` with `i2p: true`. */
 export type ProxyKind = 'none' | 'socks5' | 'https' | 'http' | 'i2p';

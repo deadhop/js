@@ -1,11 +1,11 @@
 <script lang="ts">
-  import Loading from './Loading.svelte';
+  import Loading from '@deadhop/network-ui/components/Loading.svelte';
   import type { PayApi, SettingsPatch } from '../lib/api';
-  import { ADMIN, assignmentProblem, dependents, relayKeysFor, relayKeysText, relayUsers, relaysOf, replacements, toggled } from '../lib/keys';
-  import { i2pProxy, proxiesPatch } from '../lib/proxy';
+  import { ADMIN, assignmentProblem, dependents, relayKeysFor, relayKeysText, relayUsers, relaysOf, replacements, toggled } from '@deadhop/network-ui/lib/keys';
+  import { i2pProxy, proxiesPatch } from '@deadhop/network-ui/lib/proxy';
   import type { Settings, SettingsView } from '../lib/schemas';
-  import { proxyName, rulesProblem } from '../lib/routes';
-  import I2pRegistries from './I2pRegistries.svelte';
+  import { proxyName, rulesProblem } from '@deadhop/network-ui/lib/routes';
+  import I2pRegistries from '@deadhop/network-ui/components/I2pRegistries.svelte';
   import NetworkSection from './NetworkSection.svelte';
   import Warnings from './Warnings.svelte';
 
