@@ -36,6 +36,50 @@ describe('loadConfig', () => {
   it('uses the global fetch by default', async () => {
     const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, json: async () => good } as Response);
     expect(await loadConfig()).toEqual(good);
-    expect(spy).toHaveBeenCalledOnce();
+    expect(spy).toHaveBeenCalledWith('config.json', { cache: 'no-store' });
+    expect(spy).toHaveBeenCalledWith('relays.json', { cache: 'no-store' });
+  });
+});
+
+describe('the service\'s live relays', () => {
+  const good = { serverPubkey: PUBKEY, adminPubkey: ADMIN_PUBKEY, relays: ['wss://relay.example', 'wss://shared.example'] };
+  // config.json, then relays.json.
+  const files = (live: Partial<Response> | Error) =>
+    vi.fn(async (url: string) => {
+      if (url === 'config.json') return { ok: true, json: async () => good } as Response;
+      if (live instanceof Error) throw live;
+      return live as Response;
+    }) as unknown as typeof fetch;
+
+  it('come first, then the configured ones, each once', async () => {
+    const live = { invoices: ['wss://saved.example', 'wss://shared.example'], admin: ['wss://admin.example'] };
+    const f = files({ ok: true, json: async () => live });
+    expect(await loadConfig(f)).toEqual({
+      ...good,
+      relays: ['wss://saved.example', 'wss://shared.example', 'wss://relay.example'],
+      adminRelays: ['wss://admin.example', 'wss://relay.example', 'wss://shared.example'],
+    });
+    expect(f).toHaveBeenCalledWith('relays.json', { cache: 'no-store' });
+  });
+
+  it('are added to configured administration relays too', async () => {
+    const withAdmin = { ...good, adminRelays: ['wss://own-admin.example'] };
+    const f = vi.fn(async (url: string) =>
+      url === 'config.json'
+        ? ({ ok: true, json: async () => withAdmin } as Response)
+        : ({ ok: true, json: async () => ({ invoices: [], admin: [] }) } as Response),
+    ) as unknown as typeof fetch;
+    expect(await loadConfig(f)).toEqual(withAdmin);
+  });
+
+  it('leave config.json alone when relays.json is missing, unreadable or wrong', async () => {
+    for (const live of [
+      { ok: false, status: 404 },
+      new Error('offline'),
+      { ok: true, json: async () => Promise.reject(new SyntaxError('an index.html')) },
+      { ok: true, json: async () => ({ invoices: ['ws://plain.example'], admin: [] }) },
+    ]) {
+      expect(await loadConfig(files(live))).toEqual(good);
+    }
   });
 });
