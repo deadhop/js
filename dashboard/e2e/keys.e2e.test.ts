@@ -146,6 +146,8 @@ describe.skipIf(!existsSync(chrome) || binary === null)('two keys in a real brow
     // First proxy for the public key, second for the administration key.
     await chip(page, 'Proxy 1', 'Administration');
     await chip(page, 'Proxy 2', 'Public invoices');
+    // With the strategy off (the default) the per-key lines stay hidden; switch to failover to see them.
+    await click(page, '::-p-xpath(//label[contains(normalize-space(.), "Failover")])');
     await shot('09-proxies-per-key', await proxies());
     await button(page, 'Save changes');
     await hasText(page, 'No unsaved changes.');
