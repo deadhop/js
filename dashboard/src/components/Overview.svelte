@@ -198,9 +198,9 @@
       return {
         stamp: 'offline',
         stampClass: 'badge fail',
-        title: 'No proxy reachable',
+        title: pool.reachable > 0 ? 'First proxy down' : 'No proxy reachable',
         tone: 'bad',
-        line: `0 of ${pool.total} reachable`,
+        line: `${pool.reachable} of ${pool.total} reachable`,
         text: what[pool.posture],
       };
     }
