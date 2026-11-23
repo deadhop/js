@@ -1,18 +1,18 @@
 <script lang="ts">
   import Loading from './Loading.svelte';
   import { poll } from '../lib/poll';
-  import type { PayApi } from '../lib/api';
+  import type { NetworkApi, NetworkHealth } from '../lib/network-api';
   import { formatTime } from '../lib/format';
   import { WINDOWS, errorRate, type HistoryWindow } from '../lib/relays';
-  import type { Health, RelayHealth, RelayHistory } from '../lib/schemas';
+  import type { RelayHealth, RelayHistory } from '../lib/schemas';
   import KeyBadges from './KeyBadges.svelte';
   import RelayBars from './RelayBars.svelte';
 
-  let { api, refreshMs = 30000, onBack }: { api: PayApi; refreshMs?: number; onBack: () => void } = $props();
+  let { api, refreshMs = 30000, onBack }: { api: NetworkApi; refreshMs?: number; onBack: () => void } = $props();
 
   let window = $state<HistoryWindow>('1h');
   let history = $state<RelayHistory | null>(null);
-  let health = $state<Health | null>(null);
+  let health = $state<NetworkHealth | null>(null);
   let error = $state('');
   let checking = $state(false);
 

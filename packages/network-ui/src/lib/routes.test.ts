@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import fixture from '../../../fixtures/route-patterns.json';
+import fixture from '../../../../fixtures/route-patterns.json';
 import { REASONS, destination, firstRule, hostPort, isLocalOrOverlay, matches, neverDirect, newRule, patternProblem, proxyName, resolve, rulesProblem, usesDefault } from './routes';
-import type { Rule, Settings } from './schemas';
+import type { Rule, NetworkSettings } from './schemas';
 import { settings } from '../test-helpers';
 
 const ids = ['invoices', 'admin'];
@@ -17,7 +17,7 @@ const LAN = 'ws://relay.lan:4869';
 const VPN = 'wss://relay.contextvm.org';
 const PLAIN = 'wss://bucket.coracle.social';
 
-function setup(rules: Rule[], over: Partial<Settings> = {}): Settings {
+function setup(rules: Rule[], over: Partial<NetworkSettings> = {}): NetworkSettings {
   const s = settings({ relays: [VPN, PLAIN, ONION, LAN], ...over });
   return { ...s, proxies: { ...s.proxies, list: [entry('tor'), entry('vpn'), entry('i2p', false)], rules } };
 }
@@ -58,7 +58,7 @@ describe('patterns', () => {
 
 describe('resolve', () => {
   const pool = { proxy: 'tor' };
-  const table = (s: Settings, key: string, d: Parameters<typeof resolve>[3], up: (id: string) => boolean) =>
+  const table = (s: NetworkSettings, key: string, d: Parameters<typeof resolve>[3], up: (id: string) => boolean) =>
     resolve(s, key, ids, d, up).map((r) => [r.relay, r.rule, r.via, r.reason]);
 
   it('takes the first matching rule, falls back or stays offline as the rule says', () => {
@@ -109,7 +109,7 @@ describe('resolve', () => {
 
 describe('rulesProblem', () => {
   const saved = [entry('tor'), entry('vpn'), entry('i2p', false)];
-  const problem = (rules: Rule[], dashboard: string[] = [VPN], over: Partial<Settings> = {}) => rulesProblem(setup(rules, over), keys, saved, dashboard);
+  const problem = (rules: Rule[], dashboard: string[] = [VPN], over: Partial<NetworkSettings> = {}) => rulesProblem(setup(rules, over), keys, saved, dashboard);
 
   it('accepts a sound list and says what is wrong with a bad one', () => {
     expect(problem([rule(['*.onion'], { proxy: 'tor' }), rule(['*.lan'], 'direct')])).toBe('');

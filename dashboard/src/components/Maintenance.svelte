@@ -1,8 +1,8 @@
 <script lang="ts">
-  import Loading from './Loading.svelte';
+  import Loading from '@deadhop/network-ui/components/Loading.svelte';
   import type { ControlAction, PayApi } from '../lib/api';
   import type { Backup, Health } from '../lib/schemas';
-  import { formatBytes, formatTime } from '../lib/format';
+  import { formatBytes, formatTime } from '@deadhop/network-ui/lib/format';
 
   let {
     api,

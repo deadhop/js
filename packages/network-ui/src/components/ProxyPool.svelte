@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { PayApi } from '../lib/api';
+  import type { NetworkApi } from '../lib/network-api';
   import { formatDuration } from '../lib/format';
   import { keyTag, toggled, usersOf } from '../lib/keys';
   import {
@@ -33,7 +33,7 @@
     pool,
     locked,
   }: {
-    api: PayApi;
+    api: NetworkApi;
     /** The service's keys, for choosing which may use each proxy. */
     keys: KeyInfo[];
     /** The form's proxy settings (changed in place). */

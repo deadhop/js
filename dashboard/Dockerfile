@@ -1,5 +1,5 @@
 # deadhop dashboard: static build served by unprivileged nginx on port 8080.
-# Build context: the repository root (the dashboard uses packages/client).
+# Build context: the repository root (the dashboard uses packages/client and packages/network-ui).
 FROM node:26-trixie-slim AS build
 WORKDIR /src
 COPY package.json package-lock.json ./
@@ -8,10 +8,12 @@ COPY packages/client/package.json packages/client/
 COPY packages/react/package.json packages/react/
 COPY packages/solid/package.json packages/solid/
 COPY packages/svelte/package.json packages/svelte/
+COPY packages/network-ui/package.json packages/network-ui/
 COPY packages/e2e/package.json packages/e2e/
 COPY dashboard/package.json dashboard/
-RUN npm ci --no-audit --no-fund --workspace dashboard --workspace packages/client
+RUN npm ci --no-audit --no-fund --workspace dashboard --workspace packages/client --workspace packages/network-ui
 COPY packages/client/ packages/client/
+COPY packages/network-ui/ packages/network-ui/
 COPY brand/fonts/ brand/fonts/
 COPY brand/icons/ brand/icons/
 COPY dashboard/ dashboard/

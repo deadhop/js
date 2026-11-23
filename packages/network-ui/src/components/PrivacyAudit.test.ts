@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import PrivacyAudit from './PrivacyAudit.svelte';
-import type { PayApi } from '../lib/api';
+import type { NetworkApi } from '../lib/network-api';
 import { privacyAudit } from '../test-helpers';
 
 function setup(getPrivacyAudit = vi.fn().mockResolvedValue(privacyAudit())) {
   const onBack = vi.fn();
-  render(PrivacyAudit, { props: { api: { getPrivacyAudit } as unknown as PayApi, onBack } });
+  render(PrivacyAudit, { props: { api: { getPrivacyAudit } as unknown as NetworkApi, onBack } });
   return { getPrivacyAudit, onBack };
 }
 

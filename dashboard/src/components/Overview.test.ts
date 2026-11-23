@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/sve
 import { nip19 } from 'nostr-tools';
 import Overview from './Overview.svelte';
 import type { PayApi } from '../lib/api';
-import { Activity } from '../lib/activity.svelte';
+import { Activity } from '@deadhop/network-ui/lib/activity.svelte';
 import type { RelayHealth } from '../lib/schemas';
 import { ADMIN_PUBKEY, PUBKEY, SERVICE_PUBKEY, activePool, keyInfos, proxyPool, adminInvoice, relayHistory, relayStats, health, metrics, privacyAudit, proxyCheck, series } from '../test-helpers';
 

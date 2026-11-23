@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import Settings from "./Settings.svelte";
 import { ApiError, type PayApi } from "../lib/api";
-import { i2pRule } from "../lib/proxy";
+import { i2pRule } from "@deadhop/network-ui/lib/proxy";
 import type { ProxyEntry, Settings as SettingsT } from "../lib/schemas";
 import {
   B32,

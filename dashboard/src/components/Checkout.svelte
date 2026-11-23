@@ -1,9 +1,9 @@
 <script lang="ts">
-  import Loading from './Loading.svelte';
-  import { poll } from '../lib/poll';
+  import Loading from '@deadhop/network-ui/components/Loading.svelte';
+  import { poll } from '@deadhop/network-ui/lib/poll';
   import type { PayApi } from '../lib/api';
   import type { Invoice } from '../lib/schemas';
-  import { formatBtc, formatSats, receivedSummary, statusLabel, timeLeft } from '../lib/format';
+  import { formatBtc, formatSats, receivedSummary, statusLabel, timeLeft } from '@deadhop/network-ui/lib/format';
   import Qr from './Qr.svelte';
 
   let {

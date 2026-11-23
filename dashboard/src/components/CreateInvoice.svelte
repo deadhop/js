@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { PayApi } from '../lib/api';
   import type { Info, Invoice } from '../lib/schemas';
-  import { formatSats } from '../lib/format';
+  import { formatSats } from '@deadhop/network-ui/lib/format';
 
   let { api, info, onCreated }: { api: PayApi; info: Info; onCreated: (invoice: Invoice) => void } = $props();
 
