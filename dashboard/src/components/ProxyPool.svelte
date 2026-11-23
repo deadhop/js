@@ -50,7 +50,7 @@
   } = $props();
 
   const MODES: { value: ProxyMode; title: string; text: string }[] = [
-    { value: 'off', title: 'Off', text: 'Use the first proxy in the list and never switch. While it is down, the policy below applies.' },
+    { value: 'off', title: 'Off', text: 'Use the first proxy in the list and never switch. While it is down, the policy below applies, even if other proxies are up.' },
     { value: 'failover', title: 'Failover', text: 'Use the first proxy in the list. If it is down, use the next one.' },
     { value: 'round_robin', title: 'Round-robin', text: 'Go around the list, one change at a set interval (not per connection).' },
     { value: 'chaos', title: 'Chaos', text: 'Switch to a random other proxy after a random time between a shortest and a longest interval.' },
