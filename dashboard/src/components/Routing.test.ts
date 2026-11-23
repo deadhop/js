@@ -237,7 +237,7 @@ describe('the proxies view', () => {
     const rules = [rule([A], { proxy: 'a' }), rule([B], { proxy: 'a' })];
     setup('proxies', base({ relays: [A, B] }, { list, rules }), proxyPool({ routes: [r('invoices', A, 1, 'proxy', 'a', 'rule')] }));
     expect(await screen.findByText('Carries 1 relay now · rules 1, 2 point here')).toBeTruthy();
-    expect(screen.getByText(/no proxy is in it, so those relays stay offline/)).toBeTruthy();
+    expect(screen.getByText(/None is ticked, so those relays stay offline/)).toBeTruthy();
   });
 });
 

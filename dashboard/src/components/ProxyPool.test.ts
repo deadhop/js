@@ -97,7 +97,8 @@ describe('the proxy list', () => {
     document.body.innerHTML = '';
     setup({ list, mode: 'off' }, { ...down, mode: 'off' });
     const off = await screen.findByRole('list', { name: 'Proxy in use, per key' });
-    expect([...off.querySelectorAll('li')].map((li) => li.textContent)[1]).toBe('Administration: its first proxy is down');
+    // Only the key that lost its first proxy is listed: nothing else switches.
+    expect([...off.querySelectorAll('li')].map((li) => li.textContent)).toEqual(['Administration: its first proxy is down']);
 
     // Nothing to tell apart when every proxy serves every key.
     document.body.innerHTML = '';
@@ -283,7 +284,7 @@ describe('the strategy', () => {
     await screen.findByText('tor');
     expect((screen.getByLabelText('Off') as HTMLInputElement).checked).toBe(true);
     expect(screen.getByText(/never switch/)).toBeTruthy();
-    expect(screen.getByText(/Choose Failover to fall back to the others/)).toBeTruthy();
+    expect(screen.queryByText(/Choose Failover to fall back to the others/)).toBeNull();
     expect(rows().map((r) => r.querySelector('.proxy-routes .badge')?.textContent ?? '')).toEqual(['', 'not used: strategy off', 'rules only']);
     await fireEvent.click(screen.getByLabelText('Failover'));
     expect(screen.queryByText('not used: strategy off')).toBeNull();
@@ -345,6 +346,12 @@ describe('the strategy', () => {
       'Offline: the first proxy is down and the strategy is off · kill switch',
     );
     expect(await get(proxyPool({ state: 'direct' }))).toBe('No proxy is listed: relays connect straight.');
+    // Off and working: no strategy status, no per-key list, no second hint.
+    document.body.innerHTML = '';
+    setup({ list: TWO, mode: 'off' }, activePool({ mode: 'off', total: 2, active: 'a', proxies: [one], lanes: [] }));
+    await screen.findByText('tor');
+    expect(document.querySelector('.strategy-state')).toBeNull();
+    expect(screen.queryByText(/Only the first proxy in the default route/)).toBeNull();
     expect(await get(proxyPool({ state: 'transparent', transparent: true }))).toBe('Transparent proxy declared: nothing is checked.');
   });
 });
