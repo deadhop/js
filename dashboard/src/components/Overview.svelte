@@ -160,7 +160,7 @@
 
   function heading(d: typeof data, failed: string): string {
     if (d === null) return failed ? 'Not loaded.' : 'Loading…';
-    return d.health.service.paused ? 'Invoicing stopped.' : 'Serving. Nothing to reach.';
+    return d.health.service.paused ? 'Invoicing stopped.' : 'Serving. Dials out, never listens.';
   }
 
   /** What the proxy tile says, from the pool, the live relay states and the last check. */
