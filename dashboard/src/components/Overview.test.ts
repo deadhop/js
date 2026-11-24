@@ -56,7 +56,7 @@ describe('Overview', () => {
   it('heads the page while connecting, then shows health, totals, windows and the chart', async () => {
     const api = setup();
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Loading…');
-    await screen.findByRole('heading', { name: 'Serving. Nothing to reach.' });
+    await screen.findByRole('heading', { name: 'Serving. Dials out, never listens.' });
     expect(screen.getByText('Running')).toBeTruthy();
     expect(screen.getByText('up 1h 1m · v0.1.0 · 0 restarts')).toBeTruthy();
     expect(screen.getByText('1 of 1 connected')).toBeTruthy();
