@@ -82,7 +82,7 @@
     const names = (m: Record<string, string>) => JSON.stringify(Object.entries(m).sort());
     if (names(f.relay_names) !== names(live.relay_names)) patch.relay_names = { ...f.relay_names };
     // Which keys use which relays: only the restricted relays are saved.
-    const problem = assignmentProblem(keys, f) || rulesProblem(f, keys, live.proxies.list, dashboardRelays);
+    const problem = assignmentProblem(keys, f) || rulesProblem(f, keys, dashboardRelays);
     if (problem !== '') return problem;
     const assigned = relayKeysFor(f.relays, f.relay_keys, ids);
     if (relayKeysText(assigned) !== relayKeysText(relayKeysFor(live.relays, live.relay_keys, ids))) patch.relay_keys = assigned;

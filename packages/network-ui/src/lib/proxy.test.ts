@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
-import { I2P_PORT, NO_PROXY, buildProxy, editedUrl, i2pProxy, i2pRule, i2pRuleIndex, isNew, move, newEntry, parseProxy, proxiesPatch, registryProblem, shortDuration, splitDuration, toSecs } from './proxy';
-import { settings } from '../test-helpers';
+import { describe, expect, it, vi } from 'vitest';
+import { I2P_PORT, NO_PROXY, buildProxy, editedUrl, freshId, groupId, groupsProblem, i2pProxy, i2pRule, i2pRuleIndex, isNew, move, newEntry, newGroup, parseProxy, proxiesPatch, registryProblem, shortDuration, splitDuration, toSecs } from './proxy';
+import { group, settings } from '../test-helpers';
 
 describe('proxy fields', () => {
   it('parses every kind of proxy url', () => {
@@ -49,11 +49,24 @@ describe('the proxy list', () => {
     expect(move(same, 0, 2)).toBe(same);
   });
 
-  it('numbers new entries apart from saved ones', () => {
-    const a = newEntry('x', 'socks5://h:1');
-    expect(isNew(a)).toBe(true);
-    expect(newEntry('', 'socks5://h:2').id).not.toBe(a.id);
-    expect(isNew({ id: 'p1', name: '', url: '', keys: [], pool: true })).toBe(false);
+  it('gives new entries an id the service accepts, apart from the ids taken', () => {
+    const a = newEntry('x', 'socks5://h:1', false, []);
+    expect(a.id).toMatch(/^p[0-9a-f]{8}$/);
+    expect(isNew(a, [{ id: 'p1' }])).toBe(true);
+    expect(isNew({ id: 'p1' }, [{ id: 'p1' }])).toBe(false);
+    // A random id that is taken is drawn again.
+    const random = vi.spyOn(crypto, 'getRandomValues');
+    random.mockImplementationOnce((b) => (b as Uint8Array).fill(1)).mockImplementationOnce((b) => (b as Uint8Array).fill(2));
+    expect(freshId('p', ['p01010101'])).toBe('p02020202');
+  });
+
+  it('makes a group id from its name once, unique, and random when the name has no letters', () => {
+    expect(groupId('Exits', [])).toBe('exits');
+    expect(groupId('  Tor & VPN!! ', [])).toBe('tor-vpn');
+    expect(groupId('Exits', ['exits', 'exits-2'])).toBe('exits-3');
+    expect(groupId('A very long group name that goes on', [])).toBe('a-very-long-group-na');
+    expect(groupId('!!!', [])).toMatch(/^g[0-9a-f]{8}$/);
+    expect(newGroup('Exits', ['a', 'b'], [])).toEqual({ id: 'exits', name: 'Exits', proxies: ['a', 'b'], strategy: 'failover', rotate_secs: 3600, chaos_min_secs: 300, chaos_max_secs: 900 });
   });
 
   it('splits seconds into the biggest even unit and back', () => {
@@ -71,38 +84,41 @@ describe('the proxy list', () => {
 });
 
 describe('the proxy patch', () => {
-  const entry = { id: 'a', name: 'tor', url: 'socks5://u:***@h:1', keys: [], pool: true };
+  const entry = { id: 'a', name: 'tor', url: 'socks5://u:***@h:1' };
   const live = { ...settings().proxies, list: [entry, { ...entry, id: 'b', url: 'socks5://h:2' }] };
 
   it('is empty without changes, and names only what differs', () => {
     expect(proxiesPatch(live, structuredClone(live))).toEqual({});
-    const form = { ...structuredClone(live), mode: 'chaos' as const, offline: 'open' as const, transparent: true, rotate_secs: 120 };
-    expect(proxiesPatch(live, form)).toEqual({ mode: 'chaos', offline: 'open', transparent: true, rotate_secs: 120 });
+    const form = { ...structuredClone(live), offline: 'open' as const, transparent: true, default: { proxy: 'a' } };
+    expect(proxiesPatch(live, form)).toEqual({ offline: 'open', transparent: true, default: { proxy: 'a' } });
   });
 
-  it('sends the whole list, with ids for saved entries and none for new ones', () => {
+  it('sends the whole list, every entry with its id', () => {
     const base = { ...live, list: [entry] };
-    const form = { ...base, list: [newEntry('new', 'socks5://n:1'), entry] };
-    expect(proxiesPatch(base, form)).toEqual({ list: [{ name: 'new', url: 'socks5://n:1', keys: [], pool: true }, { id: 'a', name: 'tor', url: 'socks5://u:***@h:1', keys: [], pool: true }] });
+    const added = newEntry('new', 'socks5://n:1', false, ['a']);
+    const form = { ...base, list: [added, entry] };
+    expect(proxiesPatch(base, form)).toEqual({ list: [{ id: added.id, name: 'new', url: 'socks5://n:1' }, { id: 'a', name: 'tor', url: 'socks5://u:***@h:1' }] });
   });
 
-  it('sends the rules and registries whole when either changes', () => {
-    const rule = { name: 'I2P', match: ['*.i2p'], keys: [], to: { proxy: 'a' }, fallback: 'offline' as const };
-    const form = { ...structuredClone(live), rules: [rule], i2p_registries: [live.i2p_registries[0]] };
-    expect(proxiesPatch(live, form)).toEqual({ rules: [rule], i2p_registries: [live.i2p_registries[0]] });
+  it('sends the rules, groups, per-key default routes and registries whole when they change', () => {
+    const rule = { name: 'I2P', match: ['*.i2p'], keys: [], to: { group: 'g' }, fallback: 'policy' as const };
+    const form = { ...structuredClone(live), groups: [group('g', ['a', 'b'])], rules: [rule], default_keys: { admin: 'block' as const }, i2p_registries: [live.i2p_registries[0]] };
+    expect(proxiesPatch(live, form)).toEqual({ groups: [group('g', ['a', 'b'])], rules: [rule], default_keys: { admin: 'block' }, i2p_registries: [live.i2p_registries[0]] });
+    // The order of the per-key default routes does not matter.
+    const both = { ...live, default_keys: { admin: 'block' as const, invoices: 'direct' as const } };
+    expect(proxiesPatch(both, { ...both, default_keys: { invoices: 'direct', admin: 'block' } })).toEqual({});
   });
 
-  it('reports a problem with an interval', () => {
-    const f = (over: Partial<typeof live>) => proxiesPatch(live, { ...live, ...over });
-    expect(f({ rotate_secs: NaN })).toBe('Fill in every interval.');
-    expect(f({ chaos_min_secs: 10 })).toBe('Intervals run from 1 minute to 7 days.');
-    expect(f({ chaos_max_secs: 700_000 })).toBe('Intervals run from 1 minute to 7 days.');
+  it("reports a problem with a group: its proxies, its intervals, whatever the strategy", () => {
+    const f = (over: Partial<ReturnType<typeof group>>) => proxiesPatch(live, { ...live, groups: [group('g', ['a', 'b'], { name: 'Exits', strategy: 'failover', ...over })] });
+    expect(f({ proxies: ['a'] })).toContain('Group Exits needs at least 2 proxies');
+    expect(f({ proxies: ['a', 'gone'] })).toContain('Group Exits holds a proxy that is no longer listed');
+    expect(f({ rotate_secs: NaN })).toBe('Group Exits: fill in every interval.');
+    expect(f({ chaos_min_secs: 10 })).toBe('Group Exits: intervals run from 1 minute to 7 days.');
+    expect(f({ chaos_max_secs: 700_000 })).toBe('Group Exits: intervals run from 1 minute to 7 days.');
     expect(f({ chaos_min_secs: 900, chaos_max_secs: 300 })).toContain('longer than the longest');
-  });
-
-  it('ignores the strategy intervals with fewer than two proxies, since the strategy is not applied', () => {
-    const one = { ...live, list: [entry] };
-    expect(proxiesPatch(one, { ...one, rotate_secs: NaN, chaos_min_secs: 900, chaos_max_secs: 300 })).toEqual({});
+    expect(groupsProblem({ list: live.list, groups: Array.from({ length: 9 }, (_, i) => group(`g${i}`, ['a', 'b'])) })).toBe('At most 8 groups.');
+    expect(groupsProblem({ list: live.list, groups: [group('g', ['a', 'b'])] })).toBe('');
   });
 });
 
@@ -116,15 +132,15 @@ describe('the I2P router proxy', () => {
     expect(editedUrl('http://u:***@h:4444', { ...parseProxy('http://u:***@h:4444'), kind: 'i2p' })).toEqual({ url: 'http://u:***@h:4444' });
   });
 
-  it('starts outside the default route and is sent with i2p', () => {
-    const e = newEntry('i2pd', 'http://127.0.0.1:4444', true);
-    expect(e).toMatchObject({ pool: false, i2p: true });
-    expect(newEntry('tor', 'socks5://h:1')).toMatchObject({ pool: true, i2p: false });
+  it('is sent with i2p', () => {
+    const e = newEntry('i2pd', 'http://127.0.0.1:4444', true, []);
+    expect(e).toMatchObject({ i2p: true });
+    expect(newEntry('tor', 'socks5://h:1', false, [])).toMatchObject({ i2p: false });
     const live = settings().proxies;
-    const form = { ...live, list: [e, { id: 'p1', name: '', url: 'socks5://h:1', keys: [], pool: true, i2p: true }] };
+    const form = { ...live, list: [e, { id: 'p1', name: '', url: 'socks5://h:1', i2p: true }] };
     expect((proxiesPatch(live, form) as { list: unknown[] }).list).toEqual([
-      { name: 'i2pd', url: 'http://127.0.0.1:4444', keys: [], pool: false, i2p: true },
-      { id: 'p1', name: '', url: 'socks5://h:1', keys: [], pool: true, i2p: true },
+      { id: e.id, name: 'i2pd', url: 'http://127.0.0.1:4444', i2p: true },
+      { id: 'p1', name: '', url: 'socks5://h:1', i2p: true },
     ]);
     expect(i2pProxy(form)?.name).toBe('i2pd');
     expect(i2pProxy(live)).toBeUndefined();

@@ -16,20 +16,16 @@ export interface NetworkApi {
   resolveI2pName(name: string): Promise<I2pLookup>;
 }
 
-/** A proxy as sent: no `id` makes a new one; a hidden password stays with its `id`. */
+/** A proxy as sent: its `id` (chosen here for a new one); a hidden password stays with its `id`. */
 export interface ProxyInput {
   id?: string;
   name?: string;
   url: string;
-  /** Key ids whose default route may use it; empty or left out is every key. */
-  keys?: string[];
-  /** In the default route; left out is yes. */
-  pool?: boolean;
   /** An I2P router's HTTP proxy; left out is no. */
   i2p?: boolean;
 }
 
-/** Changes to the proxy settings; `list` replaces the whole list. */
+/** Changes to the proxy settings; `list`, `groups`, `default_keys`, `rules` and `i2p_registries` each replace the whole value. */
 export interface ProxiesPatch extends Partial<Omit<ProxySettings, 'list'>> {
   list?: ProxyInput[];
 }
