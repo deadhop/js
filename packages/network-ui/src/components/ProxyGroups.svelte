@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { GROUP_MIN, MAX_GROUPS, STRATEGIES, isNew, move, newGroup, shortDuration } from '../lib/proxy';
+  import { GROUP_MIN, MAX_GROUPS, STRATEGIES, groupId, isNew, move, newGroup, shortDuration } from '../lib/proxy';
   import { groupName, proxyName, usedBy } from '../lib/routes';
   import { groupSummaries, keyLabel } from '../lib/routeview';
   import type { KeyInfo, ProxyGroup, ProxyPool, ProxySettings } from '../lib/schemas';
@@ -34,6 +34,14 @@
     proxies.groups = [...proxies.groups, newGroup(name, members, proxies.groups.map((g) => g.id))];
   }
 
+  /** A group not saved yet that nothing points at takes its id from its name once the name is typed. */
+  function settle(gi: number) {
+    const g = proxies.groups[gi];
+    if (!isNew(g, live.groups) || usedBy(proxies, { group: g.id }, keys).length > 0) return;
+    const id = groupId(g.name, proxies.groups.filter((_, j) => j !== gi).map((x) => x.id));
+    if (id !== g.id) change(gi, { id });
+  }
+
   const remove = (gi: number) => (proxies.groups = proxies.groups.filter((_, j) => j !== gi));
   const nameOf = (id: string) => proxyName(proxies.list.find((e) => e.id === id)!);
 </script>
@@ -62,7 +70,7 @@
         <div class="group-body">
           <div class="field">
             <label for={`group-name-${g.id}`}>Name</label>
-            <input id={`group-name-${g.id}`} maxlength="60" value={g.name} oninput={(e) => change(gi, { name: e.currentTarget.value })} />
+            <input id={`group-name-${g.id}`} maxlength="60" value={g.name} oninput={(e) => change(gi, { name: e.currentTarget.value })} onchange={() => settle(gi)} />
           </div>
           <span class="field-title" id={`group-members-${g.id}`}>Proxies, in order</span>
           <ol class="plain group-members" aria-labelledby={`group-members-${g.id}`}>

@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { REASONS, destination, firstRule, proxyName } from '../lib/routes';
-  import { groupSummaries, keyLabel, mapRows, proxySummaries, reaches, ruleText, tiles } from '../lib/routeview';
+  import { destination, firstRule, proxyName } from '../lib/routes';
+  import { groupSummaries, keyLabel, mapRows, proxySummaries, reaches, ruleText, tiles, why } from '../lib/routeview';
   import type { KeyInfo, ProxyPool, NetworkSettings } from '../lib/schemas';
 
   // The top-level view: where every relay goes, as the service decided it,
@@ -108,7 +108,7 @@
             {:else}
               <span class="via-pill off"><span class="via-dot"></span>No connection</span>
             {/if}
-            <span class="map-why">{REASONS[r.reason]}</span>
+            <span class="map-why">{why(r, r.keys[0], live.proxies)}</span>
           </span>
           <span role="cell" class="map-reach"><span>{end.what}</span><span class="map-why">{end.note}</span></span>
         </div>

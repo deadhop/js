@@ -25,7 +25,7 @@ const rows = () => [...document.querySelectorAll('li.proxy-row')];
 const names = () => rows().map((r) => r.querySelector('.proxy-name')!.textContent);
 const ids = (p: ProxySettings) => p.list.map((e) => e.id);
 const button = (name: string | RegExp) => screen.getByRole('button', { name });
-const stateLine = () => document.querySelector('.strategy-state')?.textContent ?? null;
+const stateLine = () => document.querySelector('.field.strategy .strategy-state')?.textContent ?? null;
 const laneLines = () => [...(screen.queryByRole('list', { name: 'Default route, per key' })?.querySelectorAll('li') ?? [])].map((li) => li.textContent);
 
 afterEach(() => vi.useRealTimers());
@@ -283,7 +283,12 @@ describe('what the service is doing', () => {
   it('says where the default route goes and what it does now, in one line', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(1_700_000_000_000);
-    expect(line(activePool({ default: { group: 'g' }, active: 'a', reachable: 2, next_switch_at: 1_700_000_720, proxies: [one] }))).toBe('Default route: Group Exits, using tor · next switch in 12m.');
+    const h = { group: 'g', state: 'active' as const, active: 'a', reachable: 2, next_switch_at: 1_700_000_720 };
+    expect(line(activePool({ default: { group: 'g' }, active: 'a', reachable: 2, next_switch_at: 1_700_000_720, proxies: [one], lanes: [lane('invoices', { default: { group: 'g' }, groups: [h] })] }))).toBe(
+      'Default route: Group Exits, using tor · next switch in 12m.',
+    );
+    // The soonest switch of a rule's group is not the default route's.
+    expect(line(activePool({ default: { proxy: 'a' }, active: 'a', next_switch_at: 1_700_000_720, proxies: [one] }))).toBe('Default route: tor, reachable.');
     expect(line(proxyPool({ state: 'suspended', default: { group: 'g' }, reachable: 1, active: 'a', proxies: [one] }))).toBe('Default route: Group Exits, using tor · rotation suspended: only 1 proxy is reachable.');
     expect(line(activePool({ default: { proxy: 'a' }, active: 'a', proxies: [one] }))).toBe('Default route: tor, reachable.');
     expect(line(proxyPool({ state: 'offline', default: { group: 'g' }, offline: 'invoicing_only' }))).toBe('Default route: offline: no proxy in Group Exits is reachable · invoicing only.');

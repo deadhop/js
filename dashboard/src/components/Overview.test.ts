@@ -286,10 +286,16 @@ describe('Overview', () => {
   });
 
   it('shows the next switch of a rotation, and copes with a proxy it does not know', async () => {
-    setup({ getHealth: vi.fn().mockResolvedValue(health({ proxy: 'socks5://127.0.0.1:9050', proxy_pool: activePool({ default: { group: 'exits' }, active: 'ghost', next_switch_at: 1_700_003_600 }) })) });
+    const exits = { group: 'exits', state: 'active' as const, active: 'ghost', reachable: 2, next_switch_at: 1_700_003_600 };
+    const lane = { key: 'invoices', default: { group: 'exits' }, state: 'active' as const, active: 'ghost', reachable: 2, next_switch_at: 1_700_003_600, uses_default: true, groups: [exits] };
+    setup({ getHealth: vi.fn().mockResolvedValue(health({ proxy: 'socks5://127.0.0.1:9050', proxy_pool: activePool({ default: { group: 'exits' }, active: 'ghost', next_switch_at: 1_700_003_600, lanes: [lane] }) })) });
     const tile = (await screen.findByText('online')).closest('.tile')!;
     expect(tile.textContent).toContain('Next switch 2023-11-14 23:13 UTC.');
     expect(tile.textContent).toContain('group exits: ghost · ');
+    // A single proxy never switches, though a rule's group may.
+    document.body.innerHTML = '';
+    setup({ getHealth: vi.fn().mockResolvedValue(health({ proxy: 'socks5://127.0.0.1:9050', proxy_pool: activePool({ next_switch_at: 1_700_003_600 }) })) });
+    expect((await screen.findByText('online')).closest('.tile')!.textContent).not.toContain('Next switch');
     document.body.innerHTML = '';
     setup({ getHealth: vi.fn().mockResolvedValue(health({ proxy: '', proxy_pool: activePool({ active: null }) })) });
     expect((await screen.findByText('online')).closest('.tile')!.textContent).toContain('no proxy · ');

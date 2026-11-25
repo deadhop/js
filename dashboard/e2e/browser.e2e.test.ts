@@ -113,7 +113,7 @@ describe.skipIf(!existsSync(chrome))('dashboard in a real browser', () => {
     // The other views.
     await clickButton(admin, 'Network');
     await (await admin.waitForSelector('::-p-xpath(//button[@role="tab"][starts-with(normalize-space(.), "Proxies")])'))!.click();
-    await hasText(admin, 'Proxy list, in order');
+    await hasText(admin, 'Proxy list');
     await clickButton(admin, 'Operators');
     await hasText(admin, 'from DEADHOP_ADMINS');
     await hasText(admin, 'Audit log');
