@@ -1,7 +1,8 @@
 // Proxies as form fields and back. The service stores each URL and shows its
 // password as `***`; the password stays with the proxy's id unless re-entered.
 import type { ProxiesPatch, ProxyInput } from './network-api';
-import type { ProxyEntry, ProxySettings, Rule } from './schemas';
+import { groupName } from './routes';
+import type { ProxyEntry, ProxyGroup, ProxySettings, Rule, Strategy } from './schemas';
 /** `i2p` is an I2P router's HTTP proxy: stored as `http://` with `i2p: true`. */
 export type ProxyKind = 'none' | 'socks5' | 'https' | 'http' | 'i2p';
 
@@ -63,17 +64,52 @@ export const MAX_PROXIES = 8;
 /** Shortest and longest interval the service accepts, in seconds. */
 export const MIN_SECS = 60;
 export const MAX_SECS = 604_800;
-/** Ids of proxies that have not been saved yet start with this. */
-export const NEW_PREFIX = 'new:';
+/** Most groups, and fewest proxies in one. */
+export const MAX_GROUPS = 8;
+export const GROUP_MIN = 2;
 
-export const isNew = (e: ProxyEntry) => e.id.startsWith(NEW_PREFIX);
+/** Whether a proxy or group is not saved yet: the saved list has no entry with its id. */
+export const isNew = (e: { id: string }, saved: { id: string }[]) => !saved.some((x) => x.id === e.id);
 
-let counter = 0;
-/** A proxy that is not saved yet. An I2P router starts outside the default route. */
-export function newEntry(name: string, url: string, i2p = false): ProxyEntry {
-  counter += 1;
-  return { id: `${NEW_PREFIX}${counter}`, name, url, keys: [], pool: !i2p, i2p };
+/** A fresh id that `taken` does not hold: `prefix` and eight hex digits, as the service makes them. */
+export function freshId(prefix: string, taken: string[]): string {
+  for (;;) {
+    const b = crypto.getRandomValues(new Uint8Array(4));
+    const id = prefix + [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
+    if (!taken.includes(id)) return id;
+  }
 }
+
+/** A proxy that is not saved yet. Its id is chosen here, so rules, groups and the default route can name it before it is saved. */
+export function newEntry(name: string, url: string, i2p: boolean, taken: string[]): ProxyEntry {
+  return { id: freshId('p', taken), name, url, i2p };
+}
+
+/** A group id made from its name: lower case, digits, `-`; another when taken. Chosen once, kept on renames. */
+export function groupId(name: string, taken: string[]): string {
+  const slug = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 20)
+    .replace(/-+$/, '');
+  if (slug === '') return freshId('g', taken);
+  let id = slug;
+  for (let n = 2; taken.includes(id); n += 1) id = `${slug}-${n}`;
+  return id;
+}
+
+/** A new group of `proxies` (ids, in order), failover until changed. */
+export function newGroup(name: string, proxies: string[], taken: string[]): ProxyGroup {
+  return { id: groupId(name, taken), name, proxies, strategy: 'failover', rotate_secs: 3600, chaos_min_secs: 300, chaos_max_secs: 900 };
+}
+
+/** The strategies, in words. */
+export const STRATEGIES: { value: Strategy; title: string; text: string }[] = [
+  { value: 'failover', title: 'Failover', text: 'Use the first proxy in the group. If it is down, use the next one; go back to an earlier one once it has stayed up for 2 minutes.' },
+  { value: 'round_robin', title: 'Round-robin', text: 'Go around the group, one change at a set interval (not per connection).' },
+  { value: 'chaos', title: 'Chaos', text: 'Switch to a random other proxy in the group after a random time between a shortest and a longest interval.' },
+];
 
 /** The I2P router proxy, if one is listed. */
 export const i2pProxy = (p: ProxySettings) => p.list.find((e) => e.i2p === true);
@@ -137,38 +173,47 @@ export function shortDuration(secs: number): string {
   return `${Math.floor(secs / 60)}m ${secs % 60}s`;
 }
 
-const entryKey = (e: ProxyEntry) => `${e.id}\n${e.name}\n${e.url}\n${[...e.keys].sort().join(',')}\n${e.pool}\n${e.i2p === true}`;
+const entryKey = (e: ProxyEntry) => `${e.id}\n${e.name}\n${e.url}\n${e.i2p === true}`;
 
-/** A proxy as sent; `i2p` only when it is an I2P router. */
+/** A proxy as sent, with its id; `i2p` only when it is an I2P router. */
 function input(e: ProxyEntry): ProxyInput {
-  const out: ProxyInput = isNew(e) ? { name: e.name, url: e.url, keys: e.keys, pool: e.pool } : { id: e.id, name: e.name, url: e.url, keys: e.keys, pool: e.pool };
+  const out: ProxyInput = { id: e.id, name: e.name, url: e.url };
   if (e.i2p === true) out.i2p = true;
   return out;
 }
 
-/** The proxies in the default route (the pool), in list order. */
-export const poolOf = (p: ProxySettings) => p.list.filter((e) => e.pool);
+/** Why the groups cannot be saved, or an empty string. The same checks as the service. */
+export function groupsProblem(p: Pick<ProxySettings, 'list' | 'groups'>): string {
+  if (p.groups.length > MAX_GROUPS) return `At most ${MAX_GROUPS} groups.`;
+  for (const g of p.groups) {
+    const who = `Group ${groupName(g)}`;
+    if (g.proxies.length < GROUP_MIN) return `${who} needs at least ${GROUP_MIN} proxies. To use a single proxy, point the rule or the default route at it.`;
+    if (g.proxies.some((id) => !p.list.some((e) => e.id === id))) return `${who} holds a proxy that is no longer listed. Take it out of the group first.`;
+    for (const k of ['rotate_secs', 'chaos_min_secs', 'chaos_max_secs'] as const) {
+      const v = g[k];
+      if (!Number.isInteger(v)) return `${who}: fill in every interval.`;
+      if (v < MIN_SECS || v > MAX_SECS) return `${who}: intervals run from 1 minute to 7 days.`;
+    }
+    if (g.chaos_min_secs > g.chaos_max_secs) return `${who}: the shortest chaos interval is longer than the longest.`;
+  }
+  return '';
+}
+
+/** A record as text that does not depend on the order of its keys. */
+const recordText = (m: Record<string, unknown>) => JSON.stringify(Object.entries(m).sort(([a], [b]) => a.localeCompare(b)));
 
 /** What differs from the live proxy settings, or the problem with the form. */
 export function proxiesPatch(live: ProxySettings, form: ProxySettings): ProxiesPatch | string {
+  const problem = groupsProblem(form);
+  if (problem !== '') return problem;
   const patch: ProxiesPatch = {};
-  if (form.list.map(entryKey).join('\u0000') !== live.list.map(entryKey).join('\u0000')) {
-    patch.list = form.list.map(input);
-  }
+  if (form.list.map(entryKey).join('\u0000') !== live.list.map(entryKey).join('\u0000')) patch.list = form.list.map(input);
+  if (JSON.stringify(form.groups) !== JSON.stringify(live.groups)) patch.groups = form.groups;
+  if (JSON.stringify(form.default) !== JSON.stringify(live.default)) patch.default = form.default;
+  if (recordText(form.default_keys) !== recordText(live.default_keys)) patch.default_keys = { ...form.default_keys };
   if (JSON.stringify(form.i2p_registries) !== JSON.stringify(live.i2p_registries)) patch.i2p_registries = [...form.i2p_registries];
   if (JSON.stringify(form.rules) !== JSON.stringify(live.rules)) patch.rules = form.rules;
-  if (form.mode !== live.mode) patch.mode = form.mode;
   if (form.offline !== live.offline) patch.offline = form.offline;
   if (form.transparent !== live.transparent) patch.transparent = form.transparent;
-  // With fewer than two proxies in the default route the strategy is hidden
-  // and not applied, so its intervals are neither checked nor sent.
-  if (poolOf(form).length < 2) return patch;
-  for (const k of ['rotate_secs', 'chaos_min_secs', 'chaos_max_secs'] as const) {
-    const v = form[k];
-    if (!Number.isInteger(v)) return 'Fill in every interval.';
-    if (v < MIN_SECS || v > MAX_SECS) return 'Intervals run from 1 minute to 7 days.';
-    if (v !== live[k]) patch[k] = v;
-  }
-  if (form.chaos_min_secs > form.chaos_max_secs) return 'The shortest chaos interval is longer than the longest.';
   return patch;
 }

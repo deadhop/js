@@ -3,14 +3,13 @@ import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import ProxyPool from './ProxyPool.svelte';
 import type { NetworkApi } from '../lib/network-api';
 import type { ProxyEntry, ProxyPool as Pool, ProxySettings, Rule } from '../lib/schemas';
-import { activePool, keyInfos, proxyCheck, proxyPool, settings } from '../test-helpers';
+import { activePool, group, keyInfos, lane, proxyCheck, proxyPool, settings } from '../test-helpers';
 
-const entry = (id: string, url: string, name = '', over: Partial<ProxyEntry> = {}): ProxyEntry => ({ id, name, url, keys: [], pool: true, ...over });
+const entry = (id: string, url: string, name = '', over: Partial<ProxyEntry> = {}): ProxyEntry => ({ id, name, url, ...over });
 const TWO = () => [entry('a', 'socks5://me:***@10.0.0.1:1080', 'tor'), entry('b', 'http://10.0.0.2:3128')];
 const status = (e: ProxyEntry, over: Partial<Pool['proxies'][number]> = {}): Pool['proxies'][number] => ({
-  id: e.id, name: e.name, url: e.url, reachable: true, checked_at: 1_700_000_050, status: 'connected', reason: null, keys: e.keys, pool: e.pool, ...over,
+  id: e.id, name: e.name, url: e.url, reachable: true, checked_at: 1_700_000_050, status: 'connected', reason: null, ...over,
 });
-const lane = (key: string, active: string | null, state: Pool['state'] = 'active') => ({ key, state, active, reachable: 1, next_switch_at: null, uses_default: true });
 const i2pRule = (to: Rule['to']): Rule => ({ name: '', match: ['*.i2p'], keys: [], to, fallback: 'offline' });
 
 function setup(over: Partial<ProxySettings> = {}, opts: { pool?: Pool | null; locked?: boolean; live?: ProxySettings; registriesAt?: string } = {}) {
@@ -27,12 +26,12 @@ const names = () => rows().map((r) => r.querySelector('.proxy-name')!.textConten
 const ids = (p: ProxySettings) => p.list.map((e) => e.id);
 const button = (name: string | RegExp) => screen.getByRole('button', { name });
 const stateLine = () => document.querySelector('.strategy-state')?.textContent ?? null;
-const laneLines = () => [...(screen.queryByRole('list', { name: 'Proxy in use, per key' })?.querySelectorAll('li') ?? [])].map((li) => li.textContent);
+const laneLines = () => [...(screen.queryByRole('list', { name: 'Default route, per key' })?.querySelectorAll('li') ?? [])].map((li) => li.textContent);
 
 afterEach(() => vi.useRealTimers());
 
 describe('the proxy list', () => {
-  it('starts empty, and creates a proxy as a new entry', async () => {
+  it('starts empty, and creates a proxy as a new entry that becomes the default route', async () => {
     const { proxies } = setup();
     expect(screen.getByText('0 of 8')).toBeTruthy();
     expect(screen.getByText('No proxies. Relays connect straight to this machine.')).toBeTruthy();
@@ -50,8 +49,11 @@ describe('the proxy list', () => {
     await fireEvent.input(screen.getByLabelText('Password'), { target: { value: 'pw' } });
     await fireEvent.click(button('Add to list'));
     expect(proxies.list).toHaveLength(1);
-    expect(proxies.list[0]).toMatchObject({ name: 'Tor', url: 'socks5://me:pw@127.0.0.1:9050', keys: [], pool: true, i2p: false });
-    expect(proxies.list[0].id).toMatch(/^new:/);
+    expect(proxies.list[0]).toMatchObject({ name: 'Tor', url: 'socks5://me:pw@127.0.0.1:9050', i2p: false });
+    expect(proxies.list[0].id).toMatch(/^p[0-9a-f]{8}$/);
+    // The first proxy becomes the default route, and the page says so.
+    expect(proxies.default).toEqual({ proxy: proxies.list[0].id });
+    expect(screen.getByRole('status').textContent).toBe('Everything else now goes through Tor: it is the default route. Change that under Rules, in the last row.');
     expect(screen.getByText('socks5://me:pw@127.0.0.1:9050')).toBeTruthy();
     expect(screen.getByText('not saved')).toBeTruthy();
     expect(screen.getByText('1 of 8')).toBeTruthy();
@@ -78,7 +80,7 @@ describe('the proxy list', () => {
     expect((screen.getByLabelText('Password') as HTMLInputElement).placeholder).toBe('unchanged');
     await fireEvent.input(screen.getByLabelText('Label (optional)'), { target: { value: 'onion' } });
     await fireEvent.click(button('Update proxy'));
-    expect(proxies.list[0]).toEqual({ id: 'a', name: 'onion', url: 'socks5://me:***@10.0.0.1:1080', keys: [], pool: true, i2p: false });
+    expect(proxies.list[0]).toEqual({ id: 'a', name: 'onion', url: 'socks5://me:***@10.0.0.1:1080', i2p: false });
 
     await fireEvent.click(button('Edit proxy 1'));
     await fireEvent.input(screen.getByLabelText('Port'), { target: { value: '9150' } });
@@ -99,103 +101,64 @@ describe('the proxy list', () => {
     expect(screen.getByText('Eight proxies is the most.')).toBeTruthy();
   });
 
-  it('moves a proxy with the arrow buttons, which stop at the ends', async () => {
-    const { proxies } = setup({ list: TWO() });
-    expect(names()).toEqual(['tor', 'Unnamed proxy']);
-    expect((button('Move proxy 1 up') as HTMLButtonElement).disabled).toBe(true);
-    expect((button('Move proxy 2 down') as HTMLButtonElement).disabled).toBe(true);
-    await fireEvent.click(button('Move proxy 2 up'));
-    expect(ids(proxies)).toEqual(['b', 'a']);
-    expect(names()).toEqual(['Unnamed proxy', 'tor']);
-    await fireEvent.click(button('Move proxy 1 down'));
-    expect(ids(proxies)).toEqual(['a', 'b']);
+  it('makes only the first proxy the default route, and never an I2P router', async () => {
+    const add = async (kind: string, host: string) => {
+      await fireEvent.click(button('Create proxy'));
+      await fireEvent.change(screen.getByLabelText('Type'), { target: { value: kind } });
+      await fireEvent.input(screen.getByLabelText('Host'), { target: { value: host } });
+      await fireEvent.click(button('Add to list'));
+    };
+    const { proxies } = setup();
+    await add('i2p', '10.0.0.9');
+    expect(proxies.default).toBe('direct');
+    await add('socks5', '10.0.0.1');
+    expect(proxies.default).toEqual({ proxy: proxies.list[1].id });
+    await add('socks5', '10.0.0.2');
+    expect(proxies.default).toEqual({ proxy: proxies.list[1].id });
+    // A default route chosen already is kept.
+    document.body.innerHTML = '';
+    const blocked = setup({ default: 'block' });
+    await add('socks5', '10.0.0.1');
+    expect(blocked.proxies.default).toBe('block');
+    expect(screen.queryByRole('status')).toBeNull();
   });
 
-  it('moves a proxy by dragging its handle, showing where it would land', async () => {
-    const { proxies } = setup({ list: [...TWO(), entry('c', 'socks5://10.0.0.3:9050', 'third')] });
-    const grips = () => screen.getAllByLabelText(/^Drag to reorder proxy/);
-    const set = vi.fn();
-    await fireEvent.dragStart(grips()[0], { dataTransfer: { setData: set } });
-    expect(set).toHaveBeenCalledWith('text/plain', '0');
-    expect(rows()[0].className).toContain('dragging');
-    await fireEvent.dragOver(rows()[2]);
-    expect(rows()[2].className).toContain('drop-target');
-    await fireEvent.dragOver(rows()[0]);
-    expect(rows()[0].className).not.toContain('drop-target');
-    await fireEvent.dragOver(rows()[2]);
-    await fireEvent.drop(rows()[2]);
-    expect(ids(proxies)).toEqual(['b', 'c', 'a']);
-    expect(rows().some((r) => r.className.includes('dragging'))).toBe(false);
-    // A drop with nothing being dragged does nothing; a drag can be abandoned.
-    await fireEvent.drop(rows()[0]);
-    expect(ids(proxies)).toEqual(['b', 'c', 'a']);
-    await fireEvent.dragStart(grips()[1]);
-    expect(rows()[1].className).toContain('dragging');
-    await fireEvent.dragEnd(grips()[1]);
-    expect(rows()[1].className).not.toContain('dragging');
-    expect(ids(proxies)).toEqual(['b', 'c', 'a']);
-  });
-
-  it('moves a proxy with the arrow keys on its handle, and ignores other keys', async () => {
-    const { proxies } = setup({ list: TWO() });
-    await fireEvent.keyDown(screen.getByLabelText('Drag to reorder proxy 1'), { key: 'ArrowDown' });
-    expect(ids(proxies)).toEqual(['b', 'a']);
-    await fireEvent.keyDown(screen.getByLabelText('Drag to reorder proxy 2'), { key: 'ArrowUp' });
-    expect(ids(proxies)).toEqual(['a', 'b']);
-    await fireEvent.keyDown(screen.getByLabelText('Drag to reorder proxy 1'), { key: 'ArrowUp' });
-    await fireEvent.keyDown(screen.getByLabelText('Drag to reorder proxy 1'), { key: 'Tab' });
-    expect(ids(proxies)).toEqual(['a', 'b']);
-  });
-
-  it('removes a proxy, closing the form, and drops reordering once one is left', async () => {
-    const { proxies } = setup({ list: TWO() });
+  it('removes a proxy, closing the form, unless something points at it', async () => {
+    const { proxies } = setup({ list: [...TWO(), entry('c', 'socks5://10.0.0.3:1')], groups: [group('g', ['a', 'c'], { name: 'Exits' })], default: { proxy: 'b' } });
+    for (const i of [1, 2, 3]) expect((button(`Remove proxy ${i}`) as HTMLButtonElement).disabled).toBe(true);
+    expect(button('Remove proxy 1').getAttribute('title')).toBe('Used by group Exits: change those first.');
+    expect(button('Remove proxy 2').getAttribute('title')).toBe('Used by the default route: change those first.');
+    proxies.groups = [];
     await fireEvent.click(button('Edit proxy 2'));
-    await fireEvent.click(button('Remove proxy 1'));
+    await fireEvent.click(button('Remove proxy 3'));
     expect(screen.queryByLabelText('Host')).toBeNull();
-    expect(ids(proxies)).toEqual(['b']);
-    expect(screen.queryByLabelText(/^Drag to reorder proxy/)).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Move proxy 1 up' })).toBeNull();
-  });
-
-  it('takes a proxy out of the default route, and chooses which keys use it', async () => {
-    const { proxies } = setup({ list: TWO() });
-    await fireEvent.click(screen.getByLabelText('Proxy 1 in the default route'));
-    expect(proxies.list[0].pool).toBe(false);
-    expect(within(rows()[0] as HTMLElement).getByText('rules only')).toBeTruthy();
-    expect(within(rows()[0] as HTMLElement).getByText('Used only by rules that name it.')).toBeTruthy();
-    expect(screen.getByText(/^Every relay that no rule in Rules names goes through the proxies ticked .In the default route. above\.$/)).toBeTruthy();
-    await fireEvent.click(screen.getByLabelText('Proxy 2 in the default route'));
-    expect(screen.getByText(/None is ticked, so those relays stay offline\./)).toBeTruthy();
-
-    await fireEvent.click(screen.getByLabelText('Proxy 2 in the default route'));
-    expect((screen.getByLabelText('Proxy 2 used by Administration') as HTMLInputElement).checked).toBe(true);
-    await fireEvent.click(screen.getByLabelText('Proxy 2 used by Administration'));
-    expect(proxies.list[1].keys).toEqual(['invoices']);
-    expect(proxies.list[0].keys).toEqual([]);
+    expect(ids(proxies)).toEqual(['a', 'b']);
+    expect(button('Remove proxy 1').getAttribute('title')).toBeNull();
   });
 
   it('says what each proxy carries and which rules point at it', () => {
     const list = [entry('a', 'socks5://10.0.0.1:1080', 'tor'), entry('b', 'http://10.0.0.2:3128'), entry('c', 'socks5://10.0.0.3:1080')];
     const route = (relay: string, p: string) => ({ key: 'invoices', relay, rule: null, via: 'proxy' as const, proxy: p, reason: 'default' as const });
-    const rule = (to: Rule['to']): Rule => ({ name: '', match: ['wss://x'], keys: [], to, fallback: 'offline' });
+    const rule = (to: Rule['to'], fallback: Rule['fallback'] = 'offline'): Rule => ({ name: '', match: ['wss://x'], keys: [], to, fallback });
     setup(
-      { list, rules: [rule({ proxy: 'b' }), rule('direct'), rule({ proxy: 'b' }), rule({ proxy: 'c' })] },
+      { list, rules: [rule({ proxy: 'b' }), rule('direct'), rule({ proxy: 'b' }, { to: { proxy: 'c' } })], default: { proxy: 'a' } },
       { pool: activePool({ active: 'a', routes: [route('wss://one', 'a'), route('wss://one', 'a'), route('wss://two', 'b'), route('wss://three', 'b')] }) },
     );
     const carries = rows().map((r) => r.querySelector('.proxy-routes .hint')!.textContent);
-    expect(carries).toEqual(['Carries 1 relay now', 'Carries 2 relays now · rules 1, 3 point here', 'Carries 0 relays now · rule 4 points here']);
+    expect(carries).toEqual(['Carries 1 relay now · used by the default route', 'Carries 2 relays now · used by rule 1, rule 3', 'Carries 0 relays now · used by the fallback of rule 3']);
   });
 
   it('without a status from the service, carries nothing and is not checked', () => {
     setup({ list: TWO() });
-    expect(rows().map((r) => r.querySelector('.proxy-routes .hint')!.textContent)).toEqual(['Carries 0 relays now', 'Carries 0 relays now']);
+    expect(rows().map((r) => r.querySelector('.proxy-routes .hint')!.textContent)).toEqual(['Carries 0 relays now · nothing points at it yet', 'Carries 0 relays now · nothing points at it yet']);
     expect(screen.getAllByText('not checked')).toHaveLength(2);
   });
 
-  it('shows how each proxy is doing, and which one is in use', () => {
+  it('shows how each proxy is doing, and which ones carry relays', () => {
     const list = [...TWO(), entry('c', 'socks5://10.0.0.3:1'), entry('d', 'socks5://10.0.0.4:1'), entry('e', 'socks5://10.0.0.5:1')];
     const pool = activePool({
       active: 'a',
+      routes: [{ key: 'invoices', relay: 'wss://x', rule: null, via: 'proxy', proxy: 'a', reason: 'default' }],
       total: 4,
       proxies: [
         status(list[0]),
@@ -249,7 +212,7 @@ describe('the proxy list', () => {
 });
 
 describe('an I2P router', () => {
-  it('is created with its usual port, outside the default route', async () => {
+  it('is created with its usual port, and is not made the default route', async () => {
     const { proxies } = setup();
     await fireEvent.click(button('Create proxy'));
     await fireEvent.change(screen.getByLabelText('Type'), { target: { value: 'i2p' } });
@@ -266,10 +229,11 @@ describe('an I2P router', () => {
     expect((screen.getByLabelText('Port') as HTMLInputElement).value).toBe('4444');
     await fireEvent.input(screen.getByLabelText('Label (optional)'), { target: { value: 'i2pd' } });
     await fireEvent.click(button('Add to list'));
-    expect(proxies.list[0]).toMatchObject({ name: 'i2pd', url: 'http://127.0.0.1:4444', pool: false, i2p: true });
+    expect(proxies.list[0]).toMatchObject({ name: 'i2pd', url: 'http://127.0.0.1:4444', i2p: true });
+    expect(proxies.default).toBe('direct');
     expect(screen.getByText('I2P router').className).toBe('badge i2p-badge');
-    // Not saved yet: no rule can name it.
-    expect(screen.getByText('Save this proxy first. Then it can carry your .i2p relays.')).toBeTruthy();
+    // Not saved yet, a rule can still name it: its id is already chosen.
+    expect(screen.getByRole('button', { name: 'Send .i2p relays through this proxy' })).toBeTruthy();
     // Only one router: the choice is closed to a second proxy, not to the router itself.
     await fireEvent.click(button('Create proxy'));
     expect(screen.getByText('An I2P router is already listed. Only one can be.')).toBeTruthy();
@@ -281,13 +245,13 @@ describe('an I2P router', () => {
   });
 
   it('says where the page keeps the I2P name registries', () => {
-    const router = entry('r', 'http://127.0.0.1:4444', '', { pool: false, i2p: true });
+    const router = entry('r', 'http://127.0.0.1:4444', '', { i2p: true });
     setup({ list: [router] }, { registriesAt: 'below' });
     expect(screen.getByText('http://127.0.0.1:4444 carries relays only when a rule sends them to it. Where .i2p names are looked up is below.')).toBeTruthy();
   });
 
   it('once saved, offers a rule that sends .i2p relays through it', async () => {
-    const router = entry('r', 'http://127.0.0.1:4444', '', { pool: false, i2p: true });
+    const router = entry('r', 'http://127.0.0.1:4444', '', { i2p: true });
     const { proxies } = setup({ list: [router] });
     expect(screen.getByText('http://127.0.0.1:4444 carries relays only when a rule sends them to it. Where .i2p names are looked up is under Settings.')).toBeTruthy();
     await fireEvent.click(button('Send .i2p relays through this proxy'));
@@ -296,120 +260,73 @@ describe('an I2P router', () => {
     expect(screen.queryByRole('button', { name: 'Send .i2p relays through this proxy' })).toBeNull();
   });
 
-  it('names the rule that already decides, and cannot add a seventeenth', () => {
+  it('names the rule that already decides, and cannot add a thirty-third', () => {
     const other: Rule = { name: '', match: ['wss://x'], keys: [], to: 'direct', fallback: 'offline' };
-    const router = entry('r', 'http://127.0.0.1:4444', 'i2pd', { pool: false, i2p: true });
+    const router = entry('r', 'http://127.0.0.1:4444', 'i2pd', { i2p: true });
     setup({ list: [router], rules: [other, i2pRule('block')] });
     expect(screen.getByText('Rule 2 decides where .i2p relays go: nowhere: blocked.')).toBeTruthy();
     document.body.innerHTML = '';
-    setup({ list: [router], rules: Array.from({ length: 16 }, () => other) });
+    setup({ list: [router], rules: Array.from({ length: 32 }, () => other) });
     expect((button('Send .i2p relays through this proxy') as HTMLButtonElement).disabled).toBe(true);
-  });
-});
-
-describe('the strategy', () => {
-  it('is hidden with fewer than two proxies in the default route', () => {
-    setup({ list: [TWO()[0]], mode: 'chaos' });
-    expect(screen.queryByText('Strategy')).toBeNull();
-    expect(screen.queryByLabelText('Round-robin')).toBeNull();
-  });
-
-  it('describes each mode and changes the intervals that belong to it', async () => {
-    const { proxies } = setup({ list: TWO() });
-    expect((screen.getByLabelText('Failover') as HTMLInputElement).checked).toBe(true);
-    expect(screen.getByText('Use the first proxy in the list. If it is down, use the next one.')).toBeTruthy();
-    expect(screen.getByText(/returns to an earlier proxy once it has stayed up for 2 minutes/)).toBeTruthy();
-    expect(screen.queryByLabelText('Change proxy every')).toBeNull();
-
-    await fireEvent.click(screen.getByLabelText('Round-robin'));
-    expect(proxies.mode).toBe('round_robin');
-    expect(screen.getByText(/not per connection/)).toBeTruthy();
-    expect(screen.getByText(/Rotation needs two reachable proxies/)).toBeTruthy();
-    await fireEvent.input(screen.getByLabelText('Change proxy every'), { target: { value: '30' } });
-    await fireEvent.change(screen.getByLabelText('Change proxy every: unit'), { target: { value: 'm' } });
-    expect(proxies.rotate_secs).toBe(1800);
-
-    await fireEvent.click(screen.getByLabelText('Chaos'));
-    expect(proxies.mode).toBe('chaos');
-    expect(screen.queryByLabelText('Change proxy every')).toBeNull();
-    expect(screen.getByText('A random time in between, now 5m to 15m.')).toBeTruthy();
-    await fireEvent.input(screen.getByLabelText('Longest time before a change'), { target: { value: '30' } });
-    expect(proxies.chaos_max_secs).toBe(1800);
-    await fireEvent.input(screen.getByLabelText('Shortest time before a change'), { target: { value: '10' } });
-    expect(proxies.chaos_min_secs).toBe(600);
-    expect(screen.getByText('A random time in between, now 10m to 30m.')).toBeTruthy();
-  });
-
-  it('can be off: only the first proxy for each key is used, and the others say so', async () => {
-    const { proxies } = setup({ list: [...TWO(), entry('c', 'socks5://10.0.0.3:1080', 'rules', { pool: false })], mode: 'off' });
-    expect((screen.getByLabelText('Off') as HTMLInputElement).checked).toBe(true);
-    expect(screen.getByText(/never switch/)).toBeTruthy();
-    expect(screen.queryByText(/Rotation needs two/)).toBeNull();
-    expect(screen.queryByText(/returns to an earlier proxy/)).toBeNull();
-    expect(rows().map((r) => r.querySelector('.proxy-routes .badge')?.textContent ?? '')).toEqual(['', 'not used: strategy off', 'rules only']);
-    await fireEvent.click(screen.getByLabelText('Failover'));
-    expect(proxies.mode).toBe('failover');
-    expect(screen.queryByText('not used: strategy off')).toBeNull();
-  });
-
-  it('when off, counts a proxy as used if it is first for some key', () => {
-    setup({ list: [entry('a', 'socks5://10.0.0.1:1080', 'tor', { keys: ['invoices'] }), entry('b', 'http://10.0.0.2:3128', 'vpn', { keys: ['admin'] })], mode: 'off' });
-    expect(screen.queryByText('not used: strategy off')).toBeNull();
   });
 });
 
 describe('what the service is doing', () => {
   const one = status(entry('a', 'socks5://10.0.0.1:1080', 'tor'));
+  const groups = [group('g', ['a', 'b'], { name: 'Exits' })];
   const line = (pool: Pool, over: Partial<ProxySettings> = {}) => {
     document.body.innerHTML = '';
-    setup({ list: TWO(), ...over }, { pool });
+    setup({ list: TWO(), groups, ...over }, { pool });
     return stateLine();
   };
 
-  it('says it in one line', () => {
+  it('says where the default route goes and what it does now, in one line', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(1_700_000_000_000);
-    expect(line(activePool({ total: 2, active: 'b', next_switch_at: 1_700_000_720, proxies: [one, { ...one, id: 'b' }] }))).toBe('Active · proxy 2 of 2 · next switch in 12m');
-    // A switch that is overdue is due now.
-    expect(line(activePool({ total: 2, active: 'a', next_switch_at: 1_699_999_000, proxies: [one] }))).toBe('Active · proxy 1 of 2 · next switch in 0s');
-    expect(line(activePool({ total: 2, active: null, proxies: [one] }))).toBe('Active · proxy 0 of 2');
-    expect(line(proxyPool({ state: 'suspended', reachable: 1, total: 2, active: 'a', proxies: [one] }))).toBe(
-      'Suspended: rotation needs 2 reachable proxies, 1 is. That proxy keeps carrying traffic.',
-    );
-    expect(line(proxyPool({ state: 'offline', offline: 'invoicing_only', total: 2 }))).toBe('Offline: no proxy is reachable · invoicing only');
-    expect(line(proxyPool({ state: 'offline', mode: 'off', offline: 'kill_switch', total: 2 }))).toBe('Offline: no proxy is reachable · kill switch');
-    expect(line(proxyPool({ state: 'offline', mode: 'off', offline: 'open', reachable: 1, total: 2 }))).toBe('Offline: the first proxy is down and the strategy is off · carry on');
-    expect(line(proxyPool({ state: 'direct' }))).toBe('No proxy is listed: relays connect straight.');
+    expect(line(activePool({ default: { group: 'g' }, active: 'a', reachable: 2, next_switch_at: 1_700_000_720, proxies: [one] }))).toBe('Default route: Group Exits, using tor · next switch in 12m.');
+    expect(line(proxyPool({ state: 'suspended', default: { group: 'g' }, reachable: 1, active: 'a', proxies: [one] }))).toBe('Default route: Group Exits, using tor · rotation suspended: only 1 proxy is reachable.');
+    expect(line(activePool({ default: { proxy: 'a' }, active: 'a', proxies: [one] }))).toBe('Default route: tor, reachable.');
+    expect(line(proxyPool({ state: 'offline', default: { group: 'g' }, offline: 'invoicing_only' }))).toBe('Default route: offline: no proxy in Group Exits is reachable · invoicing only.');
+    expect(line(proxyPool({ state: 'offline', default: { proxy: 'a' }, offline: 'kill_switch' }))).toBe('Default route: offline: tor is down · kill switch.');
+    expect(line(proxyPool({ state: 'direct' }))).toBe('Default route: direct: relays that no rule matches connect straight.');
+    expect(line(proxyPool({ state: 'blocked', default: 'block' }))).toBe('Default route: blocked: relays that no rule matches are not connected.');
     expect(line(proxyPool({ state: 'transparent', transparent: true }))).toBe('Transparent proxy declared: nothing is checked.');
-    // Off and working: nothing to say.
-    expect(line(activePool({ mode: 'off', total: 2, active: 'a', proxies: [one] }), { mode: 'off' })).toBeNull();
+    expect(screen.getByText('Relays that no rule matches go to direct, no proxy. Change it under Rules, in the last row.')).toBeTruthy();
   });
 
-  it("says which proxy each key uses, once the keys differ", () => {
-    const list = [entry('a', 'socks5://10.0.0.1:1080', 'tor', { keys: ['invoices'] }), entry('b', 'http://10.0.0.2:3128', '', { keys: ['admin'] })];
-    const pool = activePool({ active: 'a', total: 2, proxies: list.map((e) => status(e)), lanes: [lane('invoices', 'a'), lane('admin', 'b')] });
-    const show = (p: Pool, over: Partial<ProxySettings> = {}) => {
+  it("says where each key's default route goes, once a key has one of its own", () => {
+    const pool = activePool({
+      default: { proxy: 'a' },
+      proxies: TWO().map((e) => status(e)),
+      lanes: [
+        lane('invoices', { default: { proxy: 'a' }, state: 'active', active: 'a' }),
+        lane('admin', { default: { group: 'g' }, state: 'active', active: 'b', groups: [{ group: 'g', state: 'active', active: 'b', reachable: 2, next_switch_at: null }] }),
+        lane('other', { default: { group: 'g' }, state: 'offline' }),
+        lane('gone', { default: { group: 'x' }, state: 'active', active: 'a' }),
+      ],
+    });
+    const show = (over: Partial<ProxySettings>, p: Pool | null = pool) => {
       document.body.innerHTML = '';
-      setup({ list, ...over }, { pool: p });
+      setup({ list: TWO(), groups, default: { proxy: 'a' }, ...over }, { pool: p });
       return laneLines();
     };
-    expect(show(pool)).toEqual(['Public invoices: using tor', 'Administration: using http://10.0.0.2:3128']);
-    const down = { ...pool, lanes: [lane('invoices', 'a'), lane('admin', null, 'offline'), lane('other', null, 'suspended')] };
-    expect(show(down)).toEqual(['Public invoices: using tor', 'Administration: no proxy reachable', 'other: suspended']);
-    // With the strategy off, only a key that lost its first proxy is news.
-    expect(show({ ...down, mode: 'off' }, { mode: 'off' })).toEqual(['Administration: its first proxy is down']);
-    // Nothing to tell apart when every proxy serves every key, or without a status.
-    expect(show(pool, { list: TWO() })).toEqual([]);
-    document.body.innerHTML = '';
-    setup({ list });
-    expect(laneLines()).toEqual([]);
+    expect(show({ default_keys: { admin: { group: 'g' } } })).toEqual([
+      'Public invoices: tor, reachable',
+      'Administration: Group Exits, using http://10.0.0.2:3128',
+      'other: offline: no proxy in Group Exits is reachable · kill switch',
+      'gone: A group that no longer exists, reachable',
+    ]);
+    expect(screen.getByText(/unless their key has a default route of its own/)).toBeTruthy();
+    // Nothing to tell apart when every key shares the default route, or without a status.
+    expect(show({})).toEqual([]);
+    expect(show({ default_keys: { admin: 'direct' } }, null)).toEqual([]);
   });
 });
 
-describe('when no proxy is reachable', () => {
+describe('when the default route has nothing reachable', () => {
   it('offers four ways, and warns about the ones that go clearnet', async () => {
     const { proxies } = setup({ list: TWO() });
-    const group = screen.getByRole('radiogroup', { name: 'When no proxy is reachable' });
+    const group = screen.getByRole('radiogroup', { name: 'When the default route has nothing reachable' });
     expect(within(group).getAllByRole('radio')).toHaveLength(4);
     expect((within(group).getByLabelText(/Kill switch/) as HTMLInputElement).checked).toBe(true);
     expect(within(group).getAllByText("Relays see this machine's IP address.")).toHaveLength(3);

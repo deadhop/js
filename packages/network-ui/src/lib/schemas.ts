@@ -109,30 +109,48 @@ export const PrivacyAuditSchema = z.strictObject({
 });
 export type PrivacyAudit = z.infer<typeof PrivacyAuditSchema>;
 
-export const ProxyModeSchema = z.enum(['off', 'failover', 'round_robin', 'chaos']);
-export type ProxyMode = z.infer<typeof ProxyModeSchema>;
 export const OfflinePolicySchema = z.enum(['kill_switch', 'admin_only', 'invoicing_only', 'open']);
 export type OfflinePolicy = z.infer<typeof OfflinePolicySchema>;
 
-/** Key ids a relay or proxy is assigned to; empty means every key. */
+/** Key ids a relay or rule is assigned to; empty means every key. */
 export const keyIds = z.array(z.string().max(40)).max(8);
 
+/** A proxy or group id: lower-case letters, digits, `-` and `_`. */
+export const idSchema = z.string().min(1).max(24);
+
 export const ProxyEntrySchema = z.strictObject({
-  id: z.string().min(1).max(24),
+  id: idSchema,
   name: text(60),
   url: z.string().max(300),
-  /** Keys whose default route may use it; empty is every key. */
-  keys: keyIds,
-  /** In the default route (the pool); otherwise used only by rules that name it. */
-  pool: z.boolean(),
   /** An I2P router's HTTP proxy, the one I2P names are looked up through (at most one). Left out is no. */
   i2p: z.boolean().optional(),
 });
 export type ProxyEntry = z.infer<typeof ProxyEntrySchema>;
 
-/** Where the relays a rule matches go. */
-export const RouteToSchema = z.union([z.enum(['pool', 'direct', 'block']), z.strictObject({ proxy: z.string().min(1).max(24) })]);
-export type RouteTo = z.infer<typeof RouteToSchema>;
+/** How a group picks its proxy. */
+export const StrategySchema = z.enum(['failover', 'round_robin', 'chaos']);
+export type Strategy = z.infer<typeof StrategySchema>;
+
+/** Two or more proxies, in order, and how one of them is picked. */
+export const ProxyGroupSchema = z.strictObject({
+  id: idSchema,
+  name: text(60),
+  /** Proxy ids, in order, each once. */
+  proxies: z.array(idSchema).max(8),
+  strategy: StrategySchema,
+  rotate_secs: count,
+  chaos_min_secs: count,
+  chaos_max_secs: count,
+});
+export type ProxyGroup = z.infer<typeof ProxyGroupSchema>;
+
+/** Where relays go: straight, nowhere, through one proxy, or through a group. */
+export const DestinationSchema = z.union([z.enum(['direct', 'block']), z.strictObject({ proxy: idSchema }), z.strictObject({ group: idSchema })]);
+export type Destination = z.infer<typeof DestinationSchema>;
+
+/** What a rule does while its proxy or group has nothing reachable. */
+export const FallbackSchema = z.union([z.enum(['offline', 'policy']), z.strictObject({ to: DestinationSchema })]);
+export type Fallback = z.infer<typeof FallbackSchema>;
 
 /** One routing rule. The first rule that applies to a key and matches a relay decides its route. */
 export const RuleSchema = z.strictObject({
@@ -141,21 +159,22 @@ export const RuleSchema = z.strictObject({
   match: z.array(z.string().max(256)).min(1).max(16),
   /** Keys the rule applies to; empty is every key. */
   keys: keyIds,
-  to: RouteToSchema,
-  /** For a rule through one proxy: what to do while it is down. */
-  fallback: z.enum(['offline', 'pool']),
+  to: DestinationSchema,
+  /** For a rule through a proxy or group: what to do while it has nothing reachable. */
+  fallback: FallbackSchema,
 });
 export type Rule = z.infer<typeof RuleSchema>;
 
 export const ProxySettingsSchema = z.strictObject({
   list: z.array(ProxyEntrySchema).max(8),
-  mode: ProxyModeSchema,
-  rotate_secs: count,
-  chaos_min_secs: count,
-  chaos_max_secs: count,
+  groups: z.array(ProxyGroupSchema).max(8),
+  /** The default route: where relays that no rule matches go ("Everything else"). */
+  default: DestinationSchema,
+  /** Per-key default routes, by key id, instead of `default`. */
+  default_keys: z.record(z.string().max(40), DestinationSchema),
   offline: OfflinePolicySchema,
   transparent: z.boolean(),
-  rules: z.array(RuleSchema).max(16),
+  rules: z.array(RuleSchema).max(32),
   /** Where I2P names are looked up: `http://…i2p/…{name}…` addresses; empty turns lookups off. */
   i2p_registries: z.array(z.string().max(200)).max(4),
 });
@@ -165,42 +184,61 @@ export type ProxySettings = z.infer<typeof ProxySettingsSchema>;
 export const RouteReasonSchema = z.enum(['rule', 'default', 'fallback', 'proxy_down', 'blocked', 'pool_offline', 'never_direct', 'transparent']);
 export type RouteReason = z.infer<typeof RouteReasonSchema>;
 
+/** The state of a default route or a group: what it goes through now. */
+export const PoolStateSchema = z.enum(['transparent', 'direct', 'active', 'suspended', 'offline', 'blocked']);
+export type PoolState = z.infer<typeof PoolStateSchema>;
+
+/** One group as one key uses it. */
+export const GroupHealthSchema = z.strictObject({
+  group: idSchema,
+  state: PoolStateSchema,
+  /** The proxy it uses now. */
+  active: idSchema.nullable(),
+  reachable: count,
+  next_switch_at: unixTime.nullable(),
+});
+export type GroupHealth = z.infer<typeof GroupHealthSchema>;
+
 export const ProxyPoolSchema = z.strictObject({
-  state: z.enum(['transparent', 'direct', 'active', 'suspended', 'offline']),
+  state: PoolStateSchema,
   posture: z.enum(['normal', 'off', 'admin_only', 'invoicing_only', 'open']),
-  mode: ProxyModeSchema,
+  /** The default route (of the public invoices key). */
+  default: DestinationSchema,
   offline: OfflinePolicySchema,
   transparent: z.boolean(),
-  active: z.string().max(24).nullable(),
+  active: idSchema.nullable(),
   reachable: count,
   total: count,
+  /** The soonest switch of any group a key uses. */
   next_switch_at: unixTime.nullable(),
   proxies: z
     .array(
       z.strictObject({
-        id: z.string().max(24),
+        id: idSchema,
         name: text(60),
         url: z.string().max(300),
         reachable: z.boolean().nullable(),
         checked_at: unixTime.nullable(),
         status: z.string().max(20).nullable(),
         reason: z.string().max(300).nullable(),
-        keys: keyIds,
-        pool: z.boolean(),
       }),
     )
     .max(8),
-  /** Each key's own plan; the fields above are the public invoices key's. */
+  /** Each key's default route and groups; the fields above are the public invoices key's. */
   lanes: z
     .array(
       z.strictObject({
         key: z.string().max(40),
-        state: z.enum(['transparent', 'direct', 'active', 'suspended', 'offline']),
-        active: z.string().max(24).nullable(),
+        /** This key's default route. */
+        default: DestinationSchema,
+        state: PoolStateSchema,
+        active: idSchema.nullable(),
         reachable: count,
         next_switch_at: unixTime.nullable(),
-        /** Whether any relay of this key may take the default route. */
+        /** Whether some relay of this key matches no rule (takes the default route). */
         uses_default: z.boolean(),
+        /** The groups this key may use, and what each uses now. */
+        groups: z.array(GroupHealthSchema).max(8),
       }),
     )
     .max(8),
@@ -211,9 +249,9 @@ export const ProxyPoolSchema = z.strictObject({
         key: z.string().max(40),
         relay: z.string().max(300),
         /** Number (from 1) of the rule that matched; null: the default route. */
-        rule: z.number().int().min(1).max(16).nullable(),
+        rule: z.number().int().min(1).max(32).nullable(),
         via: z.enum(['proxy', 'direct', 'off']),
-        proxy: z.string().max(24).nullable(),
+        proxy: idSchema.nullable(),
         reason: RouteReasonSchema,
       }),
     )
@@ -221,6 +259,7 @@ export const ProxyPoolSchema = z.strictObject({
 });
 export type ProxyPool = z.infer<typeof ProxyPoolSchema>;
 export type RouteState = ProxyPool['routes'][number];
+export type LaneState = ProxyPool['lanes'][number];
 
 /** One of the service's keys and what it is for. */
 export const KeyInfoSchema = z.strictObject({
