@@ -40,8 +40,13 @@ async function reopenUntil(page: Page, tab: string, text: string, ms = 150_000) 
     if (Date.now() > deadline) throw new Error(`"${text}" did not show on ${tab}`);
   }
 }
-/** Radio inputs are visually hidden: click the label that holds them. */
-const choose = (page: Page, text: string) => click(page, `::-p-xpath(//label[contains(normalize-space(.), "${text}")])`);
+/** Radio inputs are visually hidden: click the label that holds them, from the
+ * middle of the window (at its bottom edge the status bar is in the way). */
+async function choose(page: Page, text: string) {
+  const label = await page.waitForSelector(`::-p-xpath(//label[contains(normalize-space(.), "${text}")])`);
+  await label!.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  await label!.click();
+}
 const names = (page: Page) => page.$$eval('li.proxy-row', (rows) => rows.map((r) => r.querySelector('code')!.textContent));
 
 describe.skipIf(!existsSync(chrome) || binary === null)('proxy pool in a real browser', () => {
