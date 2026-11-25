@@ -150,6 +150,12 @@ describe('resolve', () => {
       [ONION, -1, 'direct', 'transparent'],
       [LAN, 0, 'off', 'blocked'],
     ]);
+    // A fallback that blocks blocks.
+    const fb = setup([rule([VPN], { proxy: 'vpn' }, { fallback: { to: 'block' } })]);
+    expect(table(fb, 'invoices', ['vpn'])[0]).toEqual([VPN, 0, 'off', 'blocked']);
+    // A default route that blocks blocks there too.
+    t.proxies.default = 'block';
+    expect(table(t, 'invoices', ['tor', 'vpn'])[2]).toEqual([ONION, -1, 'off', 'blocked']);
     // A rule to a proxy that is gone counts as down; relays for one key only stay with it.
     const gone = setup([rule(['*.onion'], { proxy: 'gone' })], { relay_keys: { [LAN]: ['admin'] } });
     expect(table(gone, 'invoices').map((r) => r[0])).toEqual([VPN, PLAIN, ONION]);
@@ -222,6 +228,8 @@ describe('rulesProblem', () => {
     expect(problem([rule(['*'], { proxy: 'tor' }, { fallback: { to: { group: 'gone' } } })])).toMatch(/^The fallback of rule 1 goes through a group/);
     expect(problem([rule(['*.onion'], 'direct')])).toMatch(/never directly/);
     expect(problem([rule([ONION], { proxy: 'tor' }, { fallback: { to: 'direct' } })])).toMatch(/never directly/);
+    // A fallback a rule never takes is not checked.
+    expect(problem([rule([ONION], 'block', { fallback: { to: 'direct' } }), rule(['*'], { proxy: 'tor' })])).toBe('');
     // Behind a transparent proxy nothing goes straight.
     const t = setup([rule(['*.onion'], 'direct')]);
     expect(rulesProblem({ ...t, proxies: { ...t.proxies, transparent: true } }, keys, [VPN])).toBe('');
@@ -275,6 +283,8 @@ describe('words', () => {
     expect(directEnd({ proxy: 'tor' }, { to: 'direct' }, 'kill_switch', p)).toMatch(/^While tor has nothing reachable, these relays connect straight/);
     expect(directEnd({ proxy: 'tor' }, 'offline', 'open', p)).toBe('');
     expect(directEnd({ proxy: 'tor' }, 'policy', 'kill_switch', p)).toBe('');
+    // A fallback that blocks never reaches the policy.
+    expect(directEnd({ proxy: 'tor' }, { to: 'block' }, 'open', p)).toBe('');
     expect(directEnd({ group: 'exits' }, 'policy', 'admin_only', p)).toMatch(/^While Group Exits has nothing reachable, the offline policy \(Operators only\) connects/);
     expect(directEnd({ proxy: 'tor' }, { to: { group: 'exits' } }, 'open', p)).toMatch(/^While tor and Group Exits both have nothing reachable, the offline policy \(Carry on\)/);
   });

@@ -144,7 +144,8 @@ export function resolve(s: Pick<NetworkSettings, 'relays' | 'relay_keys' | 'prox
     const i = firstRule(rules, key, relay);
     const rule = i < 0 ? null : rules[i];
     let r: Way;
-    if (rule?.to === 'block') r = { via: 'off', reason: 'blocked' };
+    // A block (a rule's, or the default route's) wins even behind a transparent proxy.
+    if (rule?.to === 'block' || (rule === null && defaultFor(p, key) === 'block')) r = { via: 'off', reason: 'blocked' };
     else if (transparent) r = { via: 'direct', reason: 'transparent' };
     else if (rule === null) r = go(defaultFor(p, key), 'default') ?? policy('default');
     else r = go(rule.to, 'rule') ?? fallen(rule, p, go, policy);
@@ -220,7 +221,9 @@ export function rulesProblem(s: Pick<NetworkSettings, 'relays' | 'relay_keys' | 
     if (bad !== undefined) return `Rule ${n}: ${bad}`;
     const wrong = destinationProblem(p, r.to, `Rule ${n}`) || (typeof r.fallback === 'object' ? destinationProblem(p, r.fallback.to, `The fallback of rule ${n}`) : '');
     if (wrong !== '') return wrong;
-    const direct = r.to === 'direct' || (typeof r.fallback === 'object' && r.fallback.to === 'direct');
+    // (A fallback is only ever taken from a proxy or a group.)
+    const viaProxy = typeof r.to === 'object';
+    const direct = r.to === 'direct' || (viaProxy && typeof r.fallback === 'object' && r.fallback.to === 'direct');
     if (direct && !p.transparent && r.match.some(namesTorOrI2p)) return `Rule ${n}: Tor and I2P relays can only be reached through a proxy, never directly.`;
   }
   const wrong = destinationProblem(p, p.default, 'The default route') || keys.map((k) => (k.id in p.default_keys ? destinationProblem(p, p.default_keys[k.id], `The default route of ${k.label}`) : '')).find((x) => x !== '');
@@ -284,7 +287,8 @@ export function directEnd(to: Destination, fallback: Fallback, offline: OfflineP
   if (to === 'block') return '';
   const policy = POLICIES.find((x) => x.value === offline)!;
   if (typeof fallback === 'object' && fallback.to === 'direct') return `While ${destination(to, p)} has nothing reachable, these relays connect straight: they see this machine’s IP address.`;
-  if (fallback === 'offline' || !policy.clearnet) return '';
+  // A fallback that blocks never leaves anything to the policy.
+  if (fallback === 'offline' || (typeof fallback === 'object' && fallback.to === 'block') || !policy.clearnet) return '';
   const first = fallback === 'policy' ? destination(to, p) : `${destination(to, p)} and ${destination(fallback.to, p)}`;
   return `While ${first} ${fallback === 'policy' ? 'has' : 'both have'} nothing reachable, the offline policy (${policy.title}) connects these relays straight for the keys it serves: they see this machine’s IP address.`;
 }
