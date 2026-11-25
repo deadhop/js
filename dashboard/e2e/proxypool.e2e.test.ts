@@ -1,6 +1,7 @@
-// The proxy pool in a real browser against a private service: two proxies from
-// the environment, a reorder, a mode change, and what the dashboard shows when
-// one and then every proxy stops answering. Requires `just up` (relay and
+// Proxies and groups in a real browser against a private service: two proxies
+// from the environment, a group of them with a strategy made the default
+// route, and what the dashboard shows when one and then every proxy stops
+// answering. Requires `just up` (relay and
 // Electrum) and a service binary (DEADHOP_BIN, or a build under server/target).
 // Set PROOF_DIR to also write screenshots there.
 import { existsSync, mkdirSync } from 'node:fs';
@@ -79,36 +80,40 @@ describe.skipIf(!existsSync(chrome) || binary === null)('proxy pool in a real br
     await stack?.stop();
   });
 
-  it('lists the environment proxies, reorders them, and saves a strategy', async () => {
+  it('lists the environment proxies, groups them with a strategy, and makes the group the default route', async () => {
     await hasText(page, 'Reachable');
     await shot('08-overview-proxy-active');
     await button(page, 'Network');
     await view(page, 'Proxies');
-    await hasText(page, 'Proxy list, in order');
+    await hasText(page, 'Proxy list');
     await hasText(page, 'in use');
     const [first, second] = stack.proxies.map((p) => p.url);
     expect(await names(page)).toEqual([first, second]);
-    await shot('01-proxy-list-before', await section());
-
-    await byLabel(page, 'Move proxy 2 up');
-    expect(await names(page)).toEqual([second, first]);
-    await shot('02-proxy-list-after-reorder', await section());
-    await button(page, 'Save changes');
-    await hasText(page, 'No unsaved changes.');
-    expect(await names(page)).toEqual([second, first]);
+    // DEADHOP_PROXY_MODE unset: the default route is the first proxy.
+    await hasText(page, 'used by the default route');
+    await shot('01-proxy-list', await section());
 
     await button(page, 'Create proxy');
     await shot('03-create-proxy-form', await section());
     await button(page, 'Cancel');
 
+    await button(page, 'New group');
+    const name = await page.waitForSelector('#group-name-group-1');
+    await name!.evaluate((el) => ((el as HTMLInputElement).value = ''));
+    await name!.type('Exits');
+    await byLabel(page, `Move ${second} up in Exits`);
     await choose(page, 'Round-robin');
-    await shot('04-mode-round-robin', await section());
+    await shot('04-group-round-robin', await section());
     await choose(page, 'Chaos');
-    await shot('05-mode-chaos', await section());
+    await shot('05-group-chaos', await section());
+    await view(page, 'Rules');
+    await byLabel(page, 'Edit the default route');
+    await click(page, '::-p-xpath(//div[@aria-label="Everything else goes"]//label[contains(normalize-space(.), "Group Exits")])');
+    await button(page, 'Done');
     await button(page, 'Save changes');
     await hasText(page, 'No unsaved changes.');
     await reopenUntil(page, 'Network', 'next switch in', 60_000);
-    await shot('06-strategy-active-chaos', await section());
+    await shot('06-group-active-chaos', await section());
     await choose(page, 'Operators only');
     await shot('07-offline-policy', await section());
     await button(page, 'Save changes');
@@ -116,22 +121,22 @@ describe.skipIf(!existsSync(chrome) || binary === null)('proxy pool in a real br
   }, 180_000);
 
   it('shows rotation suspended with one proxy left, then offline with none', async () => {
-    // Failover order is now [second, first]; chaos needs two reachable proxies.
+    // The group is [second, first]; chaos needs two reachable proxies.
     await stack.proxies[0].stop();
-    await reopenUntil(page, 'Network', 'Suspended: rotation needs 2 reachable proxies, 1 is');
-    await shot('09-strategy-suspended', await section());
+    await reopenUntil(page, 'Network', 'rotation suspended: only 1 proxy is reachable');
+    await shot('09-group-suspended', await section());
     await reopenUntil(page, 'Overview', 'Rotation suspended');
     await shot('10-overview-proxy-suspended');
 
     await stack.proxies[1].stop();
     await reopenUntil(page, 'Overview', 'only operators are served');
-    await hasText(page, 'No proxy reachable');
+    await hasText(page, 'No proxy in group group-1 reachable');
     await shot('11-overview-proxy-offline');
-    await reopenUntil(page, 'Network', 'Offline: no proxy is reachable');
-    await shot('12-strategy-offline', await section());
+    await reopenUntil(page, 'Network', 'Default route: offline: no proxy in Group Exits is reachable');
+    await shot('12-group-offline', await section());
   }, 420_000);
 
-  it('hides the list and strategy for a transparent proxy', async () => {
+  it('hides the list and groups for a transparent proxy', async () => {
     await page.click('.transparent-toggle input');
     await hasText(page, 'The service trusts it and checks nothing');
     await shot('13-transparent-hidden', await section());
@@ -140,7 +145,7 @@ describe.skipIf(!existsSync(chrome) || binary === null)('proxy pool in a real br
     await button(page, 'Overview');
     await hasText(page, 'Transparent proxy');
     await shot('14-overview-proxy-transparent');
-    await gone(page, 'No proxy reachable');
+    await gone(page, 'No proxy in group group-1 reachable');
     expect(problems).toEqual([]);
   });
 });
