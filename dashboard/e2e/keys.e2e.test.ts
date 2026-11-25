@@ -30,6 +30,7 @@ const button = (page: Page, name: string) => click(page, `::-p-xpath(//button[no
 /** Open one of the Network tab's views (Routes, Relays, Proxies, Rules). */
 const view = (page: Page, name: string) => click(page, `::-p-xpath(//button[@role="tab"][starts-with(normalize-space(.), "${name}")])`);
 /** A "used by" switch: the label that holds the checkbox for `what` and `key`. */
+const byLabel = (page: Page, label: string) => click(page, `[aria-label="${label}"]`);
 const chip = (page: Page, what: string, key: string) => click(page, `label:has(input[aria-label="${what} used by ${key}"])`);
 /** Open `tab` afresh (the views read the service when they open) until `text` shows. */
 async function reopenUntil(page: Page, tab: string, text: string, ms = 150_000) {
@@ -139,27 +140,29 @@ describe.skipIf(!existsSync(chrome) || binary === null)('two keys in a real brow
     await hasText(page, 'No unsaved changes.');
   }, 240_000);
 
-  it('gives each key its own proxy, and stops a save that leaves one without', async () => {
+  it('gives the administration key a default route of its own, and stops a save that blocks a key', async () => {
     await button(page, 'Network');
-    await view(page, 'Proxies');
-    await hasText(page, 'Proxy list, in order');
-    // First proxy for the public key, second for the administration key.
-    await chip(page, 'Proxy 1', 'Administration');
-    await chip(page, 'Proxy 2', 'Public invoices');
-    // With the strategy off (the default) the per-key lines stay hidden; switch to failover to see them.
-    await click(page, '::-p-xpath(//label[contains(normalize-space(.), "Failover")])');
-    await shot('09-proxies-per-key', await proxies());
+    await view(page, 'Rules');
+    await byLabel(page, 'Edit the default route');
+    // Every key goes through the first proxy (the environment's, strategy off);
+    // the administration key goes through the second instead.
+    const [, second] = stack.proxies.map((p) => p.url);
+    await click(page, '::-p-xpath((//label[contains(normalize-space(.), "A different default route for this key")])[2])');
+    await click(page, `::-p-xpath(//div[@aria-label="Everything else goes, for Administration"]//label[contains(normalize-space(.), "Through ${second}")])`);
+    await button(page, 'Done');
+    await shot('09-default-route-per-key');
     await button(page, 'Save changes');
     await hasText(page, 'No unsaved changes.');
-    await reopenUntil(page, 'Network', 'Administration: using');
+    await reopenUntil(page, 'Network', `Administration: ${second}, reachable`);
     await shot('10-proxy-in-use-per-key', await proxies());
 
-    // Both proxies for the public key leaves the administration key with none.
-    await chip(page, 'Proxy 2', 'Public invoices');
-    await chip(page, 'Proxy 2', 'Administration');
+    // Blocking everything else for the public key leaves it with no relay.
+    await view(page, 'Rules');
+    await byLabel(page, 'Edit the default route');
+    await click(page, '::-p-xpath(//div[@aria-label="Everything else goes"]//label[contains(normalize-space(.), "Nowhere: block")])');
     await button(page, 'Save changes');
-    await hasText(page, 'No proxy in the default route is assigned to Administration');
-    await shot('11-blocked-no-proxy');
+    await hasText(page, 'The rules and the default route block every relay of Public invoices');
+    await shot('11-blocked-no-relay');
     await button(page, 'Discard');
     await hasText(page, 'No unsaved changes.');
   }, 300_000);

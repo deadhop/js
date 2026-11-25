@@ -3,9 +3,9 @@
 // what the page has to work out before saving: the route of a relay being
 // added, the preview of a rule being edited, and the guards on a save. The
 // pattern cases in fixtures/route-patterns.json run against both copies.
-import type { ProxySettings, Rule, RouteReason, RouteTo, NetworkSettings } from './schemas';
+import type { Destination, Fallback, KeyInfo, NetworkSettings, OfflinePolicy, ProxyPool, ProxySettings, RouteReason, Rule } from './schemas';
 
-export const MAX_RULES = 16;
+export const MAX_RULES = 32;
 export const MAX_PATTERNS = 16;
 
 /** The host (lower case, no IPv6 brackets) and port of a relay address, as a URL parser reads them. */
@@ -107,9 +107,6 @@ function relaysFor(s: Pick<NetworkSettings, 'relays' | 'relay_keys'>, key: strin
   });
 }
 
-/** A key's default route now: the pool's proxy (by id), straight, or nothing. */
-export type DefaultRoute = { proxy: string } | 'direct' | 'off';
-
 /** Where one relay goes: a proxy id, straight, or nowhere; and why. */
 export interface Route {
   relay: string;
@@ -119,91 +116,195 @@ export interface Route {
   reason: RouteReason;
 }
 
-/** Where each of `key`'s relays goes (the service's resolve). `up` says whether a proxy answered its last probe. */
-export function resolve(s: Pick<NetworkSettings, 'relays' | 'relay_keys' | 'proxies'>, key: string, ids: string[], fallbackRoute: DefaultRoute, up: (id: string) => boolean): Route[] {
-  const { rules, list, transparent } = s.proxies;
+/** Whether two destinations are the same. */
+export const sameDestination = (a: Destination, b: Destination) => JSON.stringify(a) === JSON.stringify(b);
+
+/** Where the relays of `key` that no rule matches go. */
+export const defaultFor = (p: Pick<ProxySettings, 'default' | 'default_keys'>, key: string): Destination => p.default_keys[key] ?? p.default;
+
+/**
+ * Where each of `key`'s relays goes (the service's resolve). `now` gives the
+ * proxy (id) a proxy or group destination uses now, or null while it has
+ * nothing reachable. `offline` is what the offline policy means for the key:
+ * connect straight (true) or stay off (false); null before anything was
+ * checked, when the key waits.
+ */
+export function resolve(s: Pick<NetworkSettings, 'relays' | 'relay_keys' | 'proxies'>, key: string, ids: string[], now: (d: Destination) => string | null, offline: boolean | null): Route[] {
+  const p = s.proxies;
+  const { rules, transparent } = p;
+  type Way = Pick<Route, 'via' | 'reason'>;
+  const policy = (reason: RouteReason): Way => (offline === true ? { via: 'direct', reason } : { via: 'off', reason: 'pool_offline' });
+  const go = (d: Destination, reason: RouteReason): Way | null => {
+    if (d === 'direct') return { via: 'direct', reason };
+    if (d === 'block') return { via: 'off', reason: 'blocked' };
+    const id = now(d);
+    return id === null ? null : { via: { proxy: id }, reason };
+  };
   return relaysFor(s, key, ids).map((relay) => {
     const i = firstRule(rules, key, relay);
     const rule = i < 0 ? null : rules[i];
-    const onDefault = (reason: RouteReason): Pick<Route, 'via' | 'reason'> => (fallbackRoute === 'off' ? { via: 'off', reason: 'pool_offline' } : { via: fallbackRoute, reason });
-    let r: Pick<Route, 'via' | 'reason'>;
-    if (rule?.to === 'block') r = { via: 'off', reason: 'blocked' };
+    let r: Way;
+    // A block (a rule's, or the default route's) wins even behind a transparent proxy.
+    if (rule?.to === 'block' || (rule === null && defaultFor(p, key) === 'block')) r = { via: 'off', reason: 'blocked' };
     else if (transparent) r = { via: 'direct', reason: 'transparent' };
-    else if (rule === null) r = onDefault('default');
-    else if (rule.to === 'pool') r = onDefault('rule');
-    else if (rule.to === 'direct') r = { via: 'direct', reason: 'rule' };
-    else {
-      const id = rule.to.proxy;
-      // "Stay offline" means never another way: it always goes through its proxy (and keeps retrying there).
-      if (list.some((e) => e.id === id) && (up(id) || rule.fallback === 'offline')) r = { via: { proxy: id }, reason: 'rule' };
-      else if (rule.fallback === 'pool') r = onDefault('fallback');
-      else r = { via: 'off', reason: 'proxy_down' };
-    }
+    else if (rule === null) r = go(defaultFor(p, key), 'default') ?? policy('default');
+    else r = go(rule.to, 'rule') ?? fallen(rule, p, go, policy);
     if (r.via === 'direct' && neverDirect(relay) && !transparent) r = { via: 'off', reason: 'never_direct' };
     return { relay, rule: i, ...r };
   });
 }
 
-/** Whether some relay of `key` may take the default route. */
-export function usesDefault(s: Pick<NetworkSettings, 'relays' | 'relay_keys' | 'proxies'>, key: string, ids: string[]): boolean {
-  const rules = s.proxies.rules;
-  return relaysFor(s, key, ids).some((relay) => {
-    const i = firstRule(rules, key, relay);
-    if (i < 0) return true;
-    const to = rules[i].to;
-    return to === 'pool' || (typeof to === 'object' && rules[i].fallback === 'pool');
-  });
+/** Where a rule's relays go while its proxy or group has nothing reachable. */
+function fallen(
+  rule: Rule,
+  p: ProxySettings,
+  go: (d: Destination, reason: RouteReason) => Pick<Route, 'via' | 'reason'> | null,
+  policy: (reason: RouteReason) => Pick<Route, 'via' | 'reason'>,
+): Pick<Route, 'via' | 'reason'> {
+  const f = rule.fallback;
+  if (f === 'policy') return policy('rule');
+  if (f !== 'offline') return go(f.to, 'fallback') ?? policy('fallback');
+  // "Stay offline" means never another way: a rule through one listed proxy
+  // always goes through it (and keeps retrying there).
+  const to = rule.to as { proxy: string } | { group: string };
+  if ('proxy' in to && p.list.some((e) => e.id === to.proxy)) return { via: { proxy: to.proxy }, reason: 'rule' };
+  return { via: 'off', reason: 'proxy_down' };
 }
 
-/** Why the rule list cannot be saved, or an empty string (the service's checks, and this page's own way in). */
-export function rulesProblem(
-  s: Pick<NetworkSettings, 'relays' | 'relay_keys' | 'proxies'>,
-  keys: { id: string; label: string }[],
-  savedProxies: ProxySettings['list'],
-  dashboardRelays: string[],
-): string {
-  const rules = s.proxies.rules;
+/** What the offline policy means for one key: whether it connects straight while nothing it may use is reachable. */
+export const connectsWhileOffline = (key: Pick<KeyInfo, 'operators_only'>, policy: OfflinePolicy) =>
+  !(policy === 'kill_switch' || (policy === 'admin_only' && !key.operators_only) || (policy === 'invoicing_only' && key.operators_only));
+
+/**
+ * What `resolve` needs to preview `key`'s routes as the service would decide
+ * them now: the proxy each destination uses (as health reports it, else the
+ * first listed proxy not known to be down), and the offline policy.
+ */
+export function liveNow(pool: ProxyPool | null, p: ProxySettings, key: KeyInfo): { now: (d: Destination) => string | null; offline: boolean | null } {
+  const lane = pool?.lanes.find((l) => l.key === key.id);
+  const up = (id: string) => p.list.some((e) => e.id === id) && pool?.proxies.find((x) => x.id === id)?.reachable !== false;
+  const now = (d: Destination): string | null => {
+    if (lane !== undefined && sameDestination(d, lane.default)) return lane.active;
+    if (typeof d === 'object' && 'group' in d) {
+      const reported = lane?.groups.find((g) => g.group === d.group);
+      if (reported !== undefined) return reported.active;
+      return p.groups.find((g) => g.id === d.group)?.proxies.find(up) ?? null;
+    }
+    const id = (d as { proxy: string }).proxy;
+    return up(id) ? id : null;
+  };
+  return { now, offline: lane === undefined ? null : connectsWhileOffline(key, pool!.offline) };
+}
+
+/** Whether some relay of `key` takes the default route (no rule matches it). */
+export function usesDefault(s: Pick<NetworkSettings, 'relays' | 'relay_keys' | 'proxies'>, key: string, ids: string[]): boolean {
+  return relaysFor(s, key, ids).some((relay) => firstRule(s.proxies.rules, key, relay) < 0);
+}
+
+/** Why a destination cannot be used, or an empty string. `who` starts the sentence ("Rule 2"). */
+function destinationProblem(p: Pick<ProxySettings, 'list' | 'groups'>, d: Destination, who: string): string {
+  if (typeof d !== 'object') return '';
+  if ('proxy' in d) return p.list.some((e) => e.id === d.proxy) ? '' : `${who} goes through a proxy that is no longer listed. Change it first.`;
+  return p.groups.some((g) => g.id === d.group) ? '' : `${who} goes through a group that no longer exists. Change it first.`;
+}
+
+/** Why the rule list and default route cannot be saved, or an empty string (the service's checks, and this page's own way in). */
+export function rulesProblem(s: Pick<NetworkSettings, 'relays' | 'relay_keys' | 'proxies'>, keys: { id: string; label: string }[], dashboardRelays: string[]): string {
+  const p = s.proxies;
+  const rules = p.rules;
   const ids = keys.map((k) => k.id);
   if (rules.length > MAX_RULES) return `At most ${MAX_RULES} routing rules.`;
   for (const [i, r] of rules.entries()) {
     const n = i + 1;
     if (r.match.length === 0 || r.match.length > MAX_PATTERNS) return `Rule ${n}: between 1 and ${MAX_PATTERNS} relays or patterns are required.`;
-    const bad = r.match.map(patternProblem).find((p) => p !== '');
+    const bad = r.match.map(patternProblem).find((x) => x !== '');
     if (bad !== undefined) return `Rule ${n}: ${bad}`;
-    if (typeof r.to === 'object') {
-      const id = r.to.proxy;
-      if (!s.proxies.list.some((e) => e.id === id)) return `Rule ${n} goes through a proxy that is no longer listed. Change the rule first.`;
-      if (!savedProxies.some((e) => e.id === id)) return `Rule ${n} goes through a proxy that is not saved yet. Save the proxy first.`;
-    }
-    if (r.to === 'direct' && r.match.some(namesTorOrI2p)) return `Rule ${n}: Tor and I2P relays can only be reached through a proxy, never directly.`;
+    const wrong = destinationProblem(p, r.to, `Rule ${n}`) || (typeof r.fallback === 'object' ? destinationProblem(p, r.fallback.to, `The fallback of rule ${n}`) : '');
+    if (wrong !== '') return wrong;
+    // (A fallback is only ever taken from a proxy or a group.)
+    const viaProxy = typeof r.to === 'object';
+    const direct = r.to === 'direct' || (viaProxy && typeof r.fallback === 'object' && r.fallback.to === 'direct');
+    if (direct && !p.transparent && r.match.some(namesTorOrI2p)) return `Rule ${n}: Tor and I2P relays can only be reached through a proxy, never directly.`;
   }
+  const wrong = destinationProblem(p, p.default, 'The default route') || keys.map((k) => (k.id in p.default_keys ? destinationProblem(p, p.default_keys[k.id], `The default route of ${k.label}`) : '')).find((x) => x !== '');
+  if (wrong) return wrong;
+  const open = (key: string, relay: string) => {
+    const i = firstRule(rules, key, relay);
+    return (i < 0 ? defaultFor(p, key) : rules[i].to) !== 'block';
+  };
   for (const k of keys) {
     const relays = relaysFor(s, k.id, ids);
-    const open = relays.some((relay) => {
-      const i = firstRule(rules, k.id, relay);
-      return i < 0 || rules[i].to !== 'block';
-    });
-    if (relays.length > 0 && !open) return `The rules block every relay of ${k.label}: it could not be reached.`;
+    if (relays.length > 0 && !relays.some((relay) => open(k.id, relay))) return `The rules and the default route block every relay of ${k.label}: it could not be reached.`;
   }
   const admin = keys.find((k) => k.id === 'admin');
   if (admin !== undefined && dashboardRelays.length > 0) {
     const mine = relaysFor(s, admin.id, ids).filter((r) => dashboardRelays.some((d) => bare(d) === bare(r)));
-    const reachable = mine.some((relay) => {
-      const i = firstRule(rules, admin.id, relay);
-      return i < 0 || rules[i].to !== 'block';
-    });
-    if (mine.length > 0 && !reachable) return `The rules block every relay this page signs in through for ${admin.label}: you would be locked out.`;
+    if (mine.length > 0 && !mine.some((relay) => open(admin.id, relay))) return `The rules block every relay this page signs in through for ${admin.label}: you would be locked out.`;
   }
   return '';
 }
 
-/** A rule's destination in words. */
-export function destination(to: RouteTo, list: ProxySettings['list']): string {
-  if (to === 'pool') return 'The default route';
+/** A group's label, or its id when it has none. */
+export const groupName = (g: { id: string; name: string }) => (g.name === '' ? g.id : g.name);
+
+/** A destination in words. */
+export function destination(to: Destination, p: Pick<ProxySettings, 'list' | 'groups'>): string {
   if (to === 'direct') return 'Direct, no proxy';
   if (to === 'block') return 'Nowhere: blocked';
-  const e = list.find((p) => p.id === to.proxy);
-  return e === undefined ? 'A proxy that is no longer listed' : proxyName(e);
+  if ('proxy' in to) {
+    const e = p.list.find((x) => x.id === to.proxy);
+    return e === undefined ? 'A proxy that is no longer listed' : proxyName(e);
+  }
+  const g = p.groups.find((x) => x.id === to.group);
+  return g === undefined ? 'A group that no longer exists' : `Group ${groupName(g)}`;
+}
+
+/** Every destination there is to pick, in order: the proxies, the groups, direct, block. */
+export const destinations = (p: Pick<ProxySettings, 'list' | 'groups'>): Destination[] => [...p.list.map((e) => ({ proxy: e.id })), ...p.groups.map((g) => ({ group: g.id })), 'direct', 'block'];
+
+/** A rule's fallback in words, as what happens "if it is down". */
+export function fallbackText(f: Fallback, p: Pick<ProxySettings, 'list' | 'groups'>): string {
+  if (f === 'offline') return 'If down: stay offline, never connect another way';
+  if (f === 'policy') return 'If down: the offline policy decides';
+  return `If down: ${destination(f.to, p)}, then the offline policy`;
+}
+
+/** The offline policies, and whether each connects straight. */
+export const POLICIES: { value: OfflinePolicy; title: string; text: string; clearnet: boolean }[] = [
+  { value: 'kill_switch', title: 'Kill switch', text: 'Disconnect those relays. They stay off until a proxy is back.', clearnet: false },
+  { value: 'admin_only', title: 'Operators only', text: 'Connect straight, but answer operators only, so the proxies can be repaired (unless they are locked on the host).', clearnet: true },
+  { value: 'invoicing_only', title: 'Invoicing only', text: 'Connect straight and keep invoicing on. Operators are not served, so nothing can be managed.', clearnet: true },
+  { value: 'open', title: 'Carry on', text: 'Connect straight and serve everyone as usual.', clearnet: true },
+];
+
+/**
+ * How a route through `to` can end in a direct connection, in words, or an
+ * empty string. `fallback` is the rule's; the default route follows the
+ * offline policy (`'policy'`).
+ */
+export function directEnd(to: Destination, fallback: Fallback, offline: OfflinePolicy, p: Pick<ProxySettings, 'list' | 'groups'>): string {
+  if (to === 'direct') return 'These relays connect straight: they see this machine’s IP address.';
+  if (to === 'block') return '';
+  const policy = POLICIES.find((x) => x.value === offline)!;
+  if (typeof fallback === 'object' && fallback.to === 'direct') return `While ${destination(to, p)} has nothing reachable, these relays connect straight: they see this machine’s IP address.`;
+  // A fallback that blocks never leaves anything to the policy.
+  if (fallback === 'offline' || (typeof fallback === 'object' && fallback.to === 'block') || !policy.clearnet) return '';
+  const first = fallback === 'policy' ? destination(to, p) : `${destination(to, p)} and ${destination(fallback.to, p)}`;
+  return `While ${first} ${fallback === 'policy' ? 'has' : 'both have'} nothing reachable, the offline policy (${policy.title}) connects these relays straight for the keys it serves: they see this machine’s IP address.`;
+}
+
+/** What points at a proxy or a group, in words ("rule 2", "the fallback of rule 3", "group Exits", "the default route"). */
+export function usedBy(p: ProxySettings, target: { proxy: string } | { group: string }, keys: { id: string; label: string }[]): string[] {
+  const is = (d: Destination) => sameDestination(d, target);
+  const out: string[] = [];
+  if ('proxy' in target) for (const g of p.groups) if (g.proxies.includes(target.proxy)) out.push(`group ${groupName(g)}`);
+  p.rules.forEach((r, i) => {
+    if (is(r.to)) out.push(`rule ${i + 1}`);
+    if (typeof r.fallback === 'object' && is(r.fallback.to)) out.push(`the fallback of rule ${i + 1}`);
+  });
+  if (is(p.default)) out.push('the default route');
+  for (const [k, d] of Object.entries(p.default_keys)) if (is(d)) out.push(`the default route of ${keys.find((x) => x.id === k)?.label ?? k}`);
+  return out;
 }
 
 /** A proxy's label, or its address when it has none. */
@@ -213,13 +314,16 @@ export const proxyName = (e: { name: string; url: string }) => (e.name === '' ? 
 export const REASONS: Record<RouteReason, string> = {
   rule: 'by the rule',
   default: 'default route',
-  fallback: 'fallback: the rule’s proxy is down',
-  proxy_down: 'offline: the rule\u2019s proxy is no longer listed',
-  blocked: 'blocked by the rule',
-  pool_offline: 'offline: no proxy in the default route is reachable',
+  fallback: 'fallback: the rule’s proxy or group is down',
+  proxy_down: 'offline: the rule’s proxy or group has nothing reachable, and the rule stays offline',
+  blocked: 'blocked by a rule or the default route',
+  pool_offline: 'offline: nothing it may use is reachable, and the offline policy keeps it off',
   never_direct: 'offline: Tor and I2P relays are never reached directly',
   transparent: 'straight to the transparent proxy',
 };
 
-/** A new rule with nothing filled in. */
-export const newRule = (): Rule => ({ name: '', match: [], keys: [], to: 'pool', fallback: 'offline' });
+/** A new rule with nothing filled in, going through the first group or proxy there is. */
+export function newRule(p: Pick<ProxySettings, 'list' | 'groups'>): Rule {
+  const to: Destination = p.groups.length > 0 ? { group: p.groups[0].id } : p.list.length > 0 ? { proxy: p.list[0].id } : 'direct';
+  return { name: '', match: [], keys: [], to, fallback: 'offline' };
+}

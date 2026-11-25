@@ -1,8 +1,9 @@
 <script lang="ts">
   import { move } from '../lib/proxy';
-  import { destination, firstRule, newRule, proxyName } from '../lib/routes';
+  import { MAX_RULES, POLICIES, destination, fallbackText, firstRule, newRule } from '../lib/routes';
   import { keyLabel } from '../lib/routeview';
-  import type { KeyInfo, ProxyPool, ProxySettings, Rule, NetworkSettings } from '../lib/schemas';
+  import type { Destination, KeyInfo, ProxyPool, Rule, NetworkSettings } from '../lib/schemas';
+  import DefaultRoute from './DefaultRoute.svelte';
   import RuleEditor from './RuleEditor.svelte';
 
   // The ordered rule list. Changes go into the form (`form.proxies.rules`);
@@ -10,7 +11,6 @@
   let {
     keys,
     form,
-    saved,
     pool,
     dashboardRelays,
     locked,
@@ -18,16 +18,17 @@
   }: {
     keys: KeyInfo[];
     form: Pick<NetworkSettings, 'relays' | 'relay_keys' | 'proxies'>;
-    saved: ProxySettings['list'];
     pool: ProxyPool | null;
     dashboardRelays: string[];
     /** DEADHOP_PROXY_LOCKED: rules are part of the proxy settings. */
     locked: boolean;
-    /** Open the Proxies view (to change the default route). */
+    /** Open the Proxies view (where the offline policy is). */
     onproxies: () => void;
   } = $props();
 
   let editing = $state<{ index: number | null; rule: Rule } | null>(null);
+  /** The default route's editor is open. */
+  let editingDefault = $state(false);
 
   const rules = $derived(form.proxies.rules);
   const relaysOf = (i: number) => form.relays.filter((relay) => keys.some((k) => firstRule(rules, k.id, relay) === i));
@@ -39,9 +40,9 @@
     if (matching.length === 0 || relaysOf(i).length > 0) return null;
     return firstRule(rules, keys.find((k) => rules[i].keys.length === 0 || rules[i].keys.includes(k.id))!.id, matching[0]) + 1;
   };
-  const color = (r: Rule) => (typeof r.to === 'object' ? `proxy-c${form.proxies.list.findIndex((e) => e.id === (r.to as { proxy: string }).proxy) % 8}` : r.to);
+  /** The pill colour of a destination: its proxy's, the group colour, direct or block. */
+  const color = (d: Destination) => (typeof d !== 'object' ? d : 'group' in d ? 'pool' : `proxy-c${form.proxies.list.findIndex((e) => e.id === d.proxy) % 8}`);
   const keysText = (r: Rule) => (r.keys.length === 0 ? 'All keys' : r.keys.map((k) => keyLabel(keys, k)).join(', '));
-  const downText = (r: Rule) => (r.fallback === 'pool' ? 'If down: use the default route' : 'If down: stay offline, never connect another way');
 
   function reorder(from: number, to: number) {
     form.proxies.rules = move(form.proxies.rules, from, to);
@@ -63,24 +64,29 @@
     editing = null;
   }
 
-  const poolNames = $derived(form.proxies.list.filter((e) => e.pool).map(proxyName));
+  const policy = $derived(POLICIES.find((p) => p.value === form.proxies.offline)!);
+  /** The keys with a default route of their own. */
+  const ownDefaults = $derived(keys.filter((k) => form.proxies.default_keys[k.id] !== undefined));
   const defaultRelays = $derived(form.relays.filter((relay) => keys.some((k) => firstRule(rules, k.id, relay) < 0)));
 </script>
 
 <section class="card rules" aria-labelledby="s-rules">
   <div class="card-head">
     <h2 id="s-rules">Rules</h2>
-    <span class="badge detected">{`${rules.length} of 16`}</span>
-    <button type="button" class="primary rules-new" disabled={locked || rules.length >= 16 || editing !== null} onclick={() => (editing = { index: null, rule: newRule() })}>New rule</button>
+    <span class="badge detected">{`${rules.length} of ${MAX_RULES}`}</span>
+    <button type="button" class="primary rules-new" disabled={locked || rules.length >= MAX_RULES || editing !== null} onclick={() => (editing = { index: null, rule: newRule(form.proxies) })}>New rule</button>
   </div>
   <p class="hint">
     Rules are checked from the top. The first one that matches a relay decides its route, so put narrow rules above broad ones. A relay that matches none goes by the default
-    route.
+    route, the last row: change it there.
   </p>
   {#if locked}<p class="note" role="status">Locked on the host (DEADHOP_PROXY_LOCKED). Rules can only be changed there.</p>{/if}
 
   {#if editing !== null}
-    <RuleEditor rule={editing.rule} index={editing.index} {keys} {form} {saved} {pool} {dashboardRelays} onsave={put} oncancel={() => (editing = null)} />
+    <RuleEditor rule={editing.rule} index={editing.index} {keys} {form} {pool} {dashboardRelays} onsave={put} oncancel={() => (editing = null)} />
+  {/if}
+  {#if editingDefault}
+    <DefaultRoute {keys} proxies={form.proxies} ondone={() => (editingDefault = false)} {onproxies} />
   {/if}
 
   <ol class="rule-list" aria-label="Rules, in order">
@@ -99,9 +105,9 @@
           <span class="hint">{r.name !== '' ? r.name : r.match.every((m) => m.includes('://')) ? `${r.match.length === 1 ? 'This relay' : `These ${r.match.length} relays`}, by address` : 'Pattern on the host name'}</span>
         </span>
         <span class="rule-meta">
-          <span class={`via-pill ${color(r)}`}><span class="via-dot"></span>{destination(r.to, form.proxies.list)}</span>
+          <span class={`via-pill ${color(r.to)}`}><span class="via-dot"></span>{destination(r.to, form.proxies)}</span>
           <span class="rule-keys">{keysText(r)}</span>
-          {#if typeof r.to === 'object'}<span class={`rule-down ${r.fallback === 'offline' ? 'bad' : ''}`}>{downText(r)}</span>{/if}
+          {#if typeof r.to === 'object'}<span class={`rule-down ${r.fallback === 'offline' ? 'bad' : ''}`}>{fallbackText(r.fallback, form.proxies)}</span>{/if}
           <span class="rule-now">
             {#if hidden !== null}
               <span class="warn">{`Hidden by rule ${hidden}: never used`}</span>
@@ -125,12 +131,17 @@
       <span class="rule-no">·</span>
       <span class="rule-match"><b>Everything else</b><span class="hint">Default route. Always last.</span></span>
       <span class="rule-meta">
-        <span class="via-pill pool"><span class="via-dot"></span>{poolNames.length === 0 ? 'No proxy' : `Pool: ${poolNames.join(', ')}`}</span>
-        <span class="rule-keys">All keys</span>
-        <span class="rule-down">{poolNames.length === 0 && form.proxies.list.length === 0 ? 'Relays connect straight' : 'If down: the offline policy (Proxies)'}</span>
+        <span class={`via-pill ${color(form.proxies.default)}`}><span class="via-dot"></span>{destination(form.proxies.default, form.proxies)}</span>
+        <span class="rule-keys">{ownDefaults.length === 0 ? 'All keys' : 'Every other key'}</span>
+        {#if typeof form.proxies.default === 'object'}<span class="rule-down">{`If down: the offline policy (${policy.title})`}</span>{/if}
         <span class="rule-now">{defaultRelays.length === 1 ? `Now: 1 relay, ${defaultRelays[0]}` : `Now: ${defaultRelays.length} relays`}</span>
+        {#each ownDefaults as k (k.id)}
+          {@const own = form.proxies.default_keys[k.id]}
+          <span class="rule-keys">{`For the ${k.label} key:`}</span>
+          <span class={`via-pill ${color(own)}`}><span class="via-dot"></span>{destination(own, form.proxies)}</span>
+        {/each}
       </span>
-      <span class="rule-actions"><button type="button" class="sm" onclick={onproxies}>Edit</button></span>
+      <span class="rule-actions"><button type="button" class="sm" aria-label="Edit the default route" disabled={locked || editingDefault} onclick={() => (editingDefault = true)}>Edit</button></span>
     </li>
   </ol>
 </section>

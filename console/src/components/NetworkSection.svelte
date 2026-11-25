@@ -3,12 +3,12 @@
   // the proxies and the routing rules. The page around it saves the form.
   import { poll } from '@deadhop/network-ui/lib/poll';
   import type { NetworkApi } from '@deadhop/network-ui/lib/network-api';
-  import { ADMIN, dependents, proxiesOf, relayUsers, relaysOf } from '@deadhop/network-ui/lib/keys';
+  import { ADMIN, dependents, relayUsers, relaysOf } from '@deadhop/network-ui/lib/keys';
   import type { I2pLookup, NetworkSettings, NetworkView as View, RelayHealth, RelayHistory } from '../lib/schemas';
   import type { NetworkHealth } from '@deadhop/network-ui/lib/network-api';
   import { errorRate, i2pName, lookupLine, registryHost, relayProblem, statsFor, withHost } from '@deadhop/network-ui/lib/relays';
-  import { REASONS, destination, firstRule, proxyName } from '@deadhop/network-ui/lib/routes';
-  import { mapRows, trace } from '@deadhop/network-ui/lib/routeview';
+  import { defaultFor, destination, firstRule, proxyName } from '@deadhop/network-ui/lib/routes';
+  import { mapRows, trace, why as whyText } from '@deadhop/network-ui/lib/routeview';
   import KeyChips from '@deadhop/network-ui/components/KeyChips.svelte';
   import I2pRegistries from '@deadhop/network-ui/components/I2pRegistries.svelte';
   import ProxyPool from '@deadhop/network-ui/components/ProxyPool.svelte';
@@ -212,7 +212,7 @@
       <RouteMap {keys} live={view.settings} pool={health.proxy_pool} />
     {/if}
   {:else if netView === 'rules'}
-    <Rules {keys} {form} saved={view.settings.proxies.list} pool={health?.proxy_pool ?? null} dashboardRelays={pageRelays} locked={view.proxy_locked} onproxies={() => (netView = 'proxies')} />
+    <Rules {keys} {form} pool={health?.proxy_pool ?? null} dashboardRelays={pageRelays} locked={view.proxy_locked} onproxies={() => (netView = 'proxies')} />
   {:else if netView === 'relays'}
   <section class="card" aria-labelledby="s-conn">
     <div class="card-head">
@@ -224,7 +224,7 @@
         <li>
           <strong>{k.label}</strong>
           <span class="muted">{k.operators_only ? 'Operators sign in here to manage the service. Nobody else is answered.' : 'Customers and apps create and look up invoices here.'}</span>
-          <span class="count">{`${plural(relaysOf(form.relays, form.relay_keys, k.id, ids).length, 'relay')} · ${form.proxies.list.length === 0 ? 'no proxies' : plural(proxiesOf(form.proxies, k.id, ids).length, 'proxy', 'proxies')}`}</span>
+          <span class="count">{`${plural(relaysOf(form.relays, form.relay_keys, k.id, ids).length, 'relay')} · everything else: ${destination(defaultFor(form.proxies, k.id), form.proxies).toLowerCase()}`}</span>
         </li>
       {/each}
     </ul>
@@ -260,7 +260,7 @@
             />
             {#if routes.length === 1}
               {@const p = form.proxies.list.find((e) => e.id === routes[0].proxy)}
-              <span class={`via-pill ${routes[0].via === 'proxy' ? `proxy-c${form.proxies.list.indexOf(p!) % 8}` : routes[0].via}`} title={REASONS[routes[0].reason]}><span class="via-dot"></span>{routes[0].via === 'proxy' ? proxyName(p ?? { name: '', url: routes[0].proxy! }) : routes[0].via === 'direct' ? 'Direct' : 'No connection'}</span>
+              <span class={`via-pill ${routes[0].via === 'proxy' ? `proxy-c${form.proxies.list.indexOf(p!) % 8}` : routes[0].via}`} title={whyText(routes[0], routes[0].keys[0], view.settings.proxies)}><span class="via-dot"></span>{routes[0].via === 'proxy' ? proxyName(p ?? { name: '', url: routes[0].proxy! }) : routes[0].via === 'direct' ? 'Direct' : 'No connection'}</span>
             {:else if routes.length > 1}
               <span class="via-pill"><span class="via-dot"></span>Differs per key</span>
             {/if}
@@ -305,10 +305,10 @@
                   {@const live = routes.find((x) => x.keys.includes(k.id))}
                   <div class="relay-why-key">
                     <b>{k.label}</b>
-                    <span class="hint">{live === undefined ? 'Not reported by the service yet.' : `Now: ${live.via === 'proxy' ? proxyName(form.proxies.list.find((e) => e.id === live.proxy) ?? { name: '', url: live.proxy! }) : live.via === 'direct' ? 'direct' : 'no connection'}, ${REASONS[live.reason]}.`}</span>
+                    <span class="hint">{live === undefined ? 'Not reported by the service yet.' : `Now: ${live.via === 'proxy' ? proxyName(form.proxies.list.find((e) => e.id === live.proxy) ?? { name: '', url: live.proxy! }) : live.via === 'direct' ? 'direct' : 'no connection'}, ${whyText(live, k.id, view.settings.proxies)}.`}</span>
                     <ol class="plain relay-trace" aria-label={`Rules checked for ${k.label}`}>
                       {#each trace(form.proxies.rules, k.id, r) as c (c.no)}
-                        <li class:matched={c.matched}><span>{c.matched ? '✓' : '–'}</span><span>{c.no}</span><span class="mono">{c.match}</span><span>{c.matched ? `matched: ${destination(form.proxies.rules[c.no - 1].to, form.proxies.list).toLowerCase()}` : c.forKey ? 'no match' : `not for ${k.label}`}</span></li>
+                        <li class:matched={c.matched}><span>{c.matched ? '✓' : '–'}</span><span>{c.no}</span><span class="mono">{c.match}</span><span>{c.matched ? `matched: ${destination(form.proxies.rules[c.no - 1].to, form.proxies).toLowerCase()}` : c.forKey ? 'no match' : `not for ${k.label}`}</span></li>
                       {:else}
                         <li><span>·</span><span></span><span>No rules</span><span>default route</span></li>
                       {/each}
@@ -353,7 +353,7 @@
         {@const url = newRelay.trim()}
         {@const lines = keys.map((k) => {
           const i = firstRule(form!.proxies.rules, k.id, url);
-          return i < 0 ? 'no rule matches: the default route' : `rule ${i + 1} (${form!.proxies.rules[i].match.join(', ')}) would match: ${destination(form!.proxies.rules[i].to, form!.proxies.list).toLowerCase()}`;
+          return i < 0 ? 'no rule matches: the default route' : `rule ${i + 1} (${form!.proxies.rules[i].match.join(', ')}) would match: ${destination(form!.proxies.rules[i].to, form!.proxies).toLowerCase()}`;
         })}
         <p class="hint relay-preview" role="status">{lines.every((l) => l === lines[0]) ? `Before you add it: ${lines[0]}.` : `Before you add it: ${keys.map((k, i) => `${k.label}: ${lines[i]}`).join('; ')}.`}</p>
       {/if}

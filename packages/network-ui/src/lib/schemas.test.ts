@@ -10,10 +10,15 @@ import {
   RelayHistorySchema,
   RelayStateSchema,
   RelayStatsSchema,
-  RouteToSchema,
+  DestinationSchema,
+  FallbackSchema,
+  ProxyGroupSchema,
   RuleSchema,
 } from './schemas';
-import { activePool, health, i2pLookup, keyInfos, privacyAudit, proxyCheck, proxyPool, relayHistory, relayStats, settings } from '../test-helpers';
+import { activePool, group, health, i2pLookup, keyInfos, lane, privacyAudit, proxyCheck, proxyPool, relayHistory, relayStats, settings } from '../test-helpers';
+// What the service sends, as its own snapshot tests record it.
+import poolHealth from '../../../../server/tests/snapshots/pool_health.json';
+import fullSettings from '../../../../server/tests/snapshots/get_settings_full.json';
 
 const NOW = 1_763_900_000;
 
@@ -25,6 +30,8 @@ describe('network schemas', () => {
     expect(PrivacyAuditSchema.parse(privacyAudit())).toEqual(privacyAudit());
     expect(ProxyPoolSchema.parse(proxyPool())).toEqual(proxyPool());
     expect(ProxyPoolSchema.parse(activePool())).toEqual(activePool());
+    const lanes = activePool({ lanes: [lane('admin', { groups: [{ group: 'g', state: 'suspended', active: 'p1', reachable: 1, next_switch_at: null }] })] });
+    expect(ProxyPoolSchema.parse(lanes)).toEqual(lanes);
     expect(RelayStatsSchema.parse(relayStats())).toEqual(relayStats());
     expect(RelayHistorySchema.parse(relayHistory())).toEqual(relayHistory());
     for (const r of health().relays) expect(RelayStateSchema.parse(r)).toEqual(r);
@@ -42,15 +49,27 @@ describe('network schemas', () => {
     const proxies = {
       ...settings().proxies,
       list: [
-        { id: 't', name: 'tor', url: 'socks5://127.0.0.1:9050', keys: [], pool: true },
-        { id: 'r', name: 'i2pd', url: 'http://127.0.0.1:4444', keys: ['admin'], pool: false, i2p: true },
+        { id: 't', name: 'tor', url: 'socks5://127.0.0.1:9050' },
+        { id: 'v', name: 'vpn', url: 'socks5://10.8.0.1:1080', i2p: false },
+        { id: 'r', name: 'i2pd', url: 'http://127.0.0.1:4444', i2p: true },
       ],
+      groups: [group('exits', ['t', 'v'])],
+      default: { group: 'exits' },
+      default_keys: { admin: { proxy: 't' } },
       rules: [
         { name: 'I2P', match: ['*.i2p'], keys: [], to: { proxy: 'r' }, fallback: 'offline' },
-        { name: 'local', match: ['127.0.0.1'], keys: ['admin'], to: 'direct', fallback: 'pool' },
+        { name: 'local', match: ['127.0.0.1'], keys: ['admin'], to: 'direct', fallback: 'policy' },
+        { name: 'exit', match: ['*'], keys: [], to: { group: 'exits' }, fallback: { to: { proxy: 't' } } },
       ],
     };
     expect(ProxySettingsSchema.parse(proxies)).toEqual(proxies);
+  });
+
+  it("parse the service's own snapshots of the proxy settings and the proxy health", () => {
+    for (const view of [fullSettings.defaults, fullSettings.settings]) expect(ProxySettingsSchema.parse(view.proxies)).toEqual(view.proxies);
+    const cases = Object.entries(poolHealth).filter(([, v]) => !Array.isArray(v));
+    expect(cases.length).toBeGreaterThanOrEqual(6);
+    for (const [name, pool] of cases) expect(ProxyPoolSchema.safeParse(pool).success, name).toBe(true);
   });
 
   it('reject unexpected fields, bad values and out-of-range numbers', () => {
@@ -63,8 +82,15 @@ describe('network schemas', () => {
     expect(RelayStatsSchema.safeParse({ ...relayStats(), checks: -1 }).success).toBe(false);
     expect(ProxyPoolSchema.safeParse({ ...proxyPool(), state: 'running' }).success).toBe(false);
     expect(ProxySettingsSchema.safeParse({ ...settings().proxies, i2p_registries: ['a', 'b', 'c', 'd', 'e'] }).success).toBe(false);
-    expect(RouteToSchema.safeParse({ proxy: '' }).success).toBe(false);
-    expect(RouteToSchema.safeParse('tunnel').success).toBe(false);
-    expect(RuleSchema.safeParse({ name: '', match: [], keys: [], to: 'pool', fallback: 'offline' }).success).toBe(false);
+    expect(DestinationSchema.safeParse({ proxy: '' }).success).toBe(false);
+    expect(DestinationSchema.safeParse({ proxy: 'a', group: 'b' }).success).toBe(false);
+    expect(DestinationSchema.safeParse('pool').success).toBe(false);
+    expect(FallbackSchema.safeParse('pool').success).toBe(false);
+    expect(FallbackSchema.safeParse({ to: 'pool' }).success).toBe(false);
+    expect(ProxyGroupSchema.safeParse({ ...group('g', ['a', 'b']), strategy: 'off' }).success).toBe(false);
+    expect(RuleSchema.safeParse({ name: '', match: ['*'], keys: [], to: 'pool', fallback: 'offline' }).success).toBe(false);
+    // The old shape is refused: a proxy with keys and pool, a strategy on the settings.
+    expect(ProxySettingsSchema.safeParse({ ...settings().proxies, list: [{ id: 'a', name: '', url: 'socks5://h:1', keys: [], pool: true }] }).success).toBe(false);
+    expect(ProxySettingsSchema.safeParse({ ...settings().proxies, mode: 'failover' }).success).toBe(false);
   });
 });

@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { destination, isLocalOrOverlay, patternProblem, proxyName, resolve, rulesProblem, type DefaultRoute, type Route } from '../lib/routes';
-  import type { KeyInfo, ProxyPool, ProxySettings, Rule, NetworkSettings } from '../lib/schemas';
+  import { POLICIES, destination, destinations, directEnd, isLocalOrOverlay, liveNow, patternProblem, proxyName, resolve, rulesProblem, sameDestination, type Route } from '../lib/routes';
+  import type { Destination, Fallback, KeyInfo, ProxyPool, Rule, NetworkSettings } from '../lib/schemas';
+  import DestinationPicker from './DestinationPicker.svelte';
   import KeyChips from './KeyChips.svelte';
   import { toggled } from '../lib/keys';
   import { keyLabel } from '../lib/routeview';
@@ -12,7 +13,6 @@
     index,
     keys,
     form,
-    saved,
     pool,
     dashboardRelays,
     onsave,
@@ -22,10 +22,8 @@
     /** Its place in the list, or null for a new rule. */
     index: number | null;
     keys: KeyInfo[];
-    /** The form as it is (relays, assignments, proxies and the other rules). */
+    /** The form as it is (relays, assignments, proxies, groups and the other rules). */
     form: Pick<NetworkSettings, 'relays' | 'relay_keys' | 'proxies'>;
-    /** The saved proxies: a rule can only go through one of these. */
-    saved: ProxySettings['list'];
     pool: ProxyPool | null;
     dashboardRelays: string[];
     onsave: (rule: Rule, position: number) => void;
@@ -45,28 +43,23 @@
   const ids = $derived(keys.map((k) => k.id));
   const others = $derived(form.proxies.rules.filter((_, i) => i !== index));
   const match = $derived(mode === 'pattern' ? patterns.split(/[\s,]+/).filter((p) => p !== '') : draft.match.filter((p) => p.includes('://')));
-  const candidate = $derived<Rule>({ ...draft, match, fallback: typeof draft.to === 'object' ? draft.fallback : 'offline' });
+  /** Whether the destination is a proxy or a group: only then is there a fallback. */
+  const viaProxy = $derived(typeof draft.to === 'object');
+  const candidate = $derived<Rule>({ ...draft, match, fallback: viaProxy ? draft.fallback : 'offline' });
   /** Every place the rule can take, the last one just before the default route. */
   const positions = $derived([...others.map((_, i) => ({ value: i, label: String(i + 1) })), { value: others.length, label: `${others.length + 1}, last before the default route` }]);
   const nextRules = $derived([...others.slice(0, position), candidate, ...others.slice(position)]);
   const next = $derived({ ...form, proxies: { ...form.proxies, rules: nextRules } });
 
-  /** Each key's default route now, as the service reports it. */
-  const defaultOf = (key: string): DefaultRoute => {
-    const lane = pool?.lanes.find((l) => l.key === key);
-    if (lane === undefined) return 'off';
-    if (lane.active !== null) return { proxy: lane.active };
-    return lane.state === 'direct' || lane.state === 'transparent' ? 'direct' : 'off';
-  };
-  const up = (id: string) => pool?.proxies.find((p) => p.id === id)?.reachable !== false;
   const via = (r: Route) => (typeof r.via === 'object' ? proxyName(form.proxies.list.find((e) => e.id === (r.via as { proxy: string }).proxy) ?? { name: '', url: r.via.proxy }) : r.via === 'direct' ? 'Direct' : 'No connection');
 
   /** Relays whose route this rule would change; one line when every key changes the same way. */
   const changes = $derived.by(() => {
     const out: { key: string; relay: string; before: string; after: string }[] = [];
     for (const k of keys) {
-      const before = resolve(form, k.id, ids, defaultOf(k.id), up);
-      const after = resolve(next, k.id, ids, defaultOf(k.id), up);
+      const { now, offline } = liveNow(pool, form.proxies, k);
+      const before = resolve(form, k.id, ids, now, offline);
+      const after = resolve(next, k.id, ids, now, offline);
       after.forEach((a, i) => {
         if (via(a) === via(before[i])) return;
         const same = out.find((o) => o.relay === a.relay && o.before === via(before[i]) && o.after === via(a));
@@ -77,25 +70,39 @@
     return out;
   });
   /** Relays this rule would decide (for some key): it matches and no earlier rule does. */
-  const matched = $derived([...new Set(keys.flatMap((k) => resolve(next, k.id, ids, 'off', () => true).filter((r) => r.rule === position).map((r) => r.relay)))]);
+  const matched = $derived([...new Set(keys.flatMap((k) => resolve(next, k.id, ids, () => null, null).filter((r) => r.rule === position).map((r) => r.relay)))]);
   const exposed = $derived(candidate.to === 'direct' ? matched.filter((r) => !isLocalOrOverlay(r)) : []);
+  /** How the rule's relays could still end up connecting straight (through its fallback). */
+  const straight = $derived(candidate.to === 'direct' ? '' : directEnd(candidate.to, candidate.fallback, form.proxies.offline, form.proxies));
   const problem = $derived.by(() => {
     if (match.length === 0) return mode === 'pattern' ? 'Type at least one pattern.' : 'Tick at least one relay.';
     const bad = match.map(patternProblem).find((p) => p !== '');
     if (bad !== undefined) return bad;
-    return rulesProblem(next, keys, saved, dashboardRelays).replace(`Rule ${position + 1}`, 'This rule');
+    return rulesProblem(next, keys, dashboardRelays).replace(new RegExp(`^Rule ${position + 1}\\b`), 'This rule');
   });
   const ready = $derived(problem === '' && (exposed.length === 0 || understood));
 
-  const isProxy = (id: string) => typeof draft.to === 'object' && draft.to.proxy === id;
-  const pick = (to: Rule['to']) => (draft.to = to);
+  /** Which fallback is chosen: stay offline, the offline policy, or another destination. */
+  const fallbackKind = $derived(typeof draft.fallback === 'object' ? 'to' : draft.fallback);
+  /** The destinations a fallback may take: not the rule's own, and not block (that is staying offline). */
+  const fallbackOmit = $derived<Destination[]>([draft.to, 'block']);
+  const policy = $derived(POLICIES.find((p) => p.value === form.proxies.offline)!);
+
+  function pick(to: Destination) {
+    draft.to = to;
+    if (typeof draft.fallback === 'object' && sameDestination(draft.fallback.to, to)) draft.fallback = 'offline';
+  }
+  function pickFallback(kind: 'offline' | 'policy' | 'to') {
+    if (kind !== 'to') draft.fallback = kind;
+    else draft.fallback = { to: destinations(form.proxies).find((d) => !fallbackOmit.some((o) => sameDestination(o, d)))! } satisfies Fallback;
+  }
   const toggleRelay = (url: string, on: boolean) => (draft.match = on ? [...draft.match, url] : draft.match.filter((m) => m !== url));
 </script>
 
 <section class="card rule-editor" aria-labelledby="rule-editor-title">
   <h3 id="rule-editor-title">{index === null ? 'New rule' : `Rule ${index + 1}`}</h3>
   <p class="hint">
-    Relays matching {match.length === 0 ? '…' : match.join(', ')}, for {candidate.keys.length === 0 ? 'all keys' : candidate.keys.map((k) => keyLabel(keys, k)).join(', ')}, go to {destination(candidate.to, form.proxies.list).toLowerCase()}.
+    Relays matching {match.length === 0 ? '…' : match.join(', ')}, for {candidate.keys.length === 0 ? 'all keys' : candidate.keys.map((k) => keyLabel(keys, k)).join(', ')}, go to {destination(candidate.to, form.proxies).toLowerCase()}.
   </p>
 
   <div class="rule-grid">
@@ -127,24 +134,21 @@
 
       <fieldset class="rule-step">
         <legend>3. Where they go</legend>
-        <div class="rule-choices" role="radiogroup" aria-label="Where they go">
-          {#each saved as e (e.id)}
-            <label class="rule-choice" class:on={isProxy(e.id)}><input type="radio" name="rule-to" checked={isProxy(e.id)} onchange={() => pick({ proxy: e.id })} /><span>Through {proxyName(e)}</span></label>
-          {/each}
-          <label class="rule-choice" class:on={draft.to === 'pool'}><input type="radio" name="rule-to" checked={draft.to === 'pool'} onchange={() => pick('pool')} /><span>The default route<small>The pool and its strategy. Useful to exempt relays from a broader rule below.</small></span></label>
-          <label class="rule-choice" class:on={draft.to === 'direct'}><input type="radio" name="rule-to" checked={draft.to === 'direct'} onchange={() => pick('direct')} /><span>Direct, no proxy<small>For relays on this network, or on FIPS.</small></span></label>
-          <label class="rule-choice" class:on={draft.to === 'block'}><input type="radio" name="rule-to" checked={draft.to === 'block'} onchange={() => pick('block')} /><span>Nowhere: block<small>Never connect to these relays, even if they are listed.</small></span></label>
-        </div>
-        {#if form.proxies.list.length > saved.length}<span class="hint">A proxy that is not saved yet can be chosen once it is saved.</span>{/if}
+        <DestinationPicker name="rule-to" label="Where they go" proxies={form.proxies} value={draft.to} onpick={pick} />
       </fieldset>
 
-      {#if typeof draft.to === 'object'}
+      {#if viaProxy}
         <fieldset class="rule-step">
-          <legend>4. If that proxy is down</legend>
-          <div class="rule-choices" role="radiogroup" aria-label="If that proxy is down">
-            <label class="rule-choice" class:on={draft.fallback === 'offline'}><input type="radio" name="rule-fallback" checked={draft.fallback === 'offline'} onchange={() => (draft.fallback = 'offline')} /><span>Stay offline<small>Never connect another way.</small></span></label>
-            <label class="rule-choice" class:on={draft.fallback === 'pool'}><input type="radio" name="rule-fallback" checked={draft.fallback === 'pool'} onchange={() => (draft.fallback = 'pool')} /><span>Use the default route<small>Until the proxy is back.</small></span></label>
+          <legend>{`4. If ${destination(draft.to, form.proxies)} has nothing reachable`}</legend>
+          <div class="rule-choices" role="radiogroup" aria-label="If it has nothing reachable">
+            <label class="rule-choice" class:on={fallbackKind === 'offline'}><input type="radio" name="rule-fallback" checked={fallbackKind === 'offline'} onchange={() => pickFallback('offline')} /><span>Stay offline<small>Never connect another way.</small></span></label>
+            <label class="rule-choice" class:on={fallbackKind === 'policy'}><input type="radio" name="rule-fallback" checked={fallbackKind === 'policy'} onchange={() => pickFallback('policy')} /><span>Follow the offline policy<small>{`As the default route does. Now: ${policy.title}.`}</small></span></label>
+            <label class="rule-choice" class:on={fallbackKind === 'to'}><input type="radio" name="rule-fallback" checked={fallbackKind === 'to'} onchange={() => pickFallback('to')} /><span>Another destination<small>If that has nothing reachable either, the offline policy decides.</small></span></label>
           </div>
+          {#if typeof draft.fallback === 'object'}
+            {@const f = draft.fallback}
+            <DestinationPicker name="rule-fallback-to" label="Fall back to" proxies={form.proxies} value={f.to} omit={fallbackOmit} onpick={(d) => (draft.fallback = { to: d })} />
+          {/if}
         </fieldset>
       {/if}
 
@@ -177,6 +181,9 @@
           <span>{`${exposed.join(', ')} ${exposed.length === 1 ? 'is an internet relay' : 'are internet relays'}. Connected directly, ${exposed.length === 1 ? 'it sees' : 'they see'} this machine's address, and the privacy score drops.`}</span>
           <label class="check"><input type="checkbox" bind:checked={understood} /> I understand: {exposed.length === 1 ? 'this relay' : 'these relays'} will see my IP address.</label>
         </div>
+      {/if}
+      {#if straight !== ''}
+        <p class="map-alert warn" role="status">{straight}</p>
       {/if}
       {#if problem !== ''}<p class="field-error" role="alert">{problem}</p>{/if}
       <div class="test-row">
