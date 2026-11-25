@@ -2,8 +2,8 @@
 // (health) and the saved settings: rows for the map, the tiles above it, a
 // summary per proxy, and the trace of a relay through the rules.
 import { formatDuration } from './format';
-import { defaultFor, destination, firstRule, groupName, hostPort, isLocalOrOverlay, proxyName, sameDestination } from './routes';
-import type { GroupHealth, KeyInfo, NetworkSettings, ProxyPool, ProxySettings, RouteReason, RouteState, Rule } from './schemas';
+import { REASONS, defaultFor, destination, firstRule, groupName, hostPort, isLocalOrOverlay, proxyName, sameDestination } from './routes';
+import type { Destination, GroupHealth, KeyInfo, NetworkSettings, ProxyPool, ProxySettings, RouteReason, RouteState, Rule } from './schemas';
 
 /** One line of the map: a relay, for some keys, and where it goes. */
 export interface MapRow {
@@ -174,4 +174,27 @@ export function groupSummaries(live: Pick<ProxySettings, 'list' | 'groups' | 'de
       inDefault: keys.some((k) => sameDestination(defaultFor(live, k.id), { group: g.id })),
     };
   });
+}
+
+/**
+ * Why a relay of `key` goes the way it does, in words. Health does not mark
+ * a direct connection the offline policy made: it shows as the reason of the
+ * route that had nothing reachable, so one that should have gone through a
+ * proxy or a group is said to be the policy's.
+ */
+export function why(r: Pick<RouteState, 'rule' | 'via' | 'reason'>, key: string, p: Pick<ProxySettings, 'rules' | 'default' | 'default_keys'>): string {
+  const rule = r.rule === null ? undefined : p.rules[r.rule - 1];
+  let meant: Destination | undefined;
+  if (r.reason === 'default') meant = defaultFor(p, key);
+  else if (r.reason === 'rule') meant = rule?.to;
+  else if (r.reason === 'fallback' && typeof rule?.fallback === 'object') meant = rule.fallback.to;
+  return r.via === 'direct' && typeof meant === 'object' ? 'straight, by the offline policy: nothing it may use is reachable' : REASONS[r.reason];
+}
+
+/** What the default route's group does now (the public invoices key's, as the fields of `pool` are), or null when the default route is not a group. */
+export function defaultGroup(pool: ProxyPool): GroupHealth | null {
+  const d = pool.default;
+  if (typeof d !== 'object' || !('group' in d)) return null;
+  const reported = pool.lanes.flatMap((l) => (sameDestination(l.default, d) ? l.groups : [])).find((g) => g.group === d.group);
+  return reported ?? { group: d.group, state: pool.state, active: pool.active, reachable: pool.reachable, next_switch_at: null };
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { groupStateText, groupSummaries, keyLabel, mapRows, proxySummaries, reaches, ruleText, tiles, trace } from './routeview';
+import { defaultGroup, groupStateText, groupSummaries, keyLabel, mapRows, proxySummaries, reaches, ruleText, tiles, trace, why } from './routeview';
 import type { RouteState, Rule } from './schemas';
 import { group, keyInfos, lane, proxyPool, settings } from '../test-helpers';
 
@@ -119,5 +119,26 @@ describe('proxy summaries and traces', () => {
     expect(trace(rules.slice(0, 1), 'invoices', 'wss://a.example')).toEqual([{ no: 1, match: '*.lan', forKey: true, matched: false }]);
     expect(keyLabel(keyInfos(), 'admin')).toBe('Administration');
     expect(keyLabel(keyInfos(), 'zz')).toBe('zz');
+  });
+
+  it("says when a direct connection was the offline policy's, not the route's", () => {
+    const p = { ...settings().proxies, default: { group: 'g' } as const, default_keys: { admin: 'direct' as const }, rules: [rule(['a'], { proxy: 'tor' }), rule(['b'], 'direct'), { ...rule(['c'], { proxy: 'tor' }), fallback: { to: { group: 'g' } } }, { ...rule(['d'], { proxy: 'tor' }), fallback: { to: 'direct' as const } }] };
+    const policy = 'straight, by the offline policy: nothing it may use is reachable';
+    expect(why({ rule: null, via: 'direct', reason: 'default' }, 'invoices', p)).toBe(policy);
+    expect(why({ rule: null, via: 'direct', reason: 'default' }, 'admin', p)).toBe('default route');
+    expect(why({ rule: 1, via: 'direct', reason: 'rule' }, 'invoices', p)).toBe(policy);
+    expect(why({ rule: 2, via: 'direct', reason: 'rule' }, 'invoices', p)).toBe('by the rule');
+    expect(why({ rule: 3, via: 'direct', reason: 'fallback' }, 'invoices', p)).toBe(policy);
+    expect(why({ rule: 4, via: 'direct', reason: 'fallback' }, 'invoices', p)).toMatch(/^fallback/);
+    expect(why({ rule: 9, via: 'direct', reason: 'rule' }, 'invoices', p)).toBe('by the rule');
+    expect(why({ rule: 1, via: 'proxy', reason: 'rule' }, 'invoices', p)).toBe('by the rule');
+    expect(why({ rule: 1, via: 'off', reason: 'blocked' }, 'invoices', p)).toMatch(/^blocked/);
+  });
+
+  it("finds what the default route's group does now, not a rule's group", () => {
+    const h = { group: 'g', state: 'active' as const, active: 'tor', reachable: 2, next_switch_at: 99 };
+    expect(defaultGroup(proxyPool({ default: { proxy: 'tor' }, next_switch_at: 5 }))).toBeNull();
+    expect(defaultGroup(proxyPool({ default: { group: 'g' }, lanes: [lane('invoices', { default: { proxy: 'x' }, groups: [{ ...h, next_switch_at: 1 }] }), lane('admin', { default: { group: 'g' }, groups: [h] })] }))).toEqual(h);
+    expect(defaultGroup(proxyPool({ default: { group: 'g' }, state: 'offline', next_switch_at: 5 }))).toEqual({ group: 'g', state: 'offline', active: null, reachable: 0, next_switch_at: null });
   });
 });

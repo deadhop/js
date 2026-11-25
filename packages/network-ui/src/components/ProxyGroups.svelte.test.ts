@@ -35,11 +35,20 @@ describe('the groups', () => {
     // Renaming keeps the id that rules and the default route use.
     await fireEvent.input(screen.getByLabelText('Name'), { target: { value: 'Exits' } });
     expect(proxies.groups[0]).toMatchObject({ id: 'group-1', name: 'Exits' });
+    // Once the name is typed, a group not saved yet that nothing points at takes its id from it.
+    await fireEvent.change(screen.getByLabelText('Name'));
+    expect(proxies.groups[0].id).toBe('exits');
+    await fireEvent.change(screen.getByLabelText('Name'));
+    expect(proxies.groups[0].id).toBe('exits');
     await fireEvent.click(button('New group'));
     expect(proxies.groups.map((g) => [g.id, g.name])).toEqual([
-      ['group-1', 'Exits'],
+      ['exits', 'Exits'],
       ['group-2', 'Group 2'],
     ]);
+    // Named like another, it takes the next id free.
+    await fireEvent.input(screen.getAllByLabelText('Name')[1], { target: { value: 'Exits' } });
+    await fireEvent.change(screen.getAllByLabelText('Name')[1]);
+    expect(proxies.groups[1].id).toBe('exits-2');
   });
 
   it('stop at eight', () => {
@@ -115,6 +124,20 @@ describe('the groups', () => {
     expect(proxies.groups.map((g) => g.proxies)).toEqual([
       ['tor', 'vpn'],
       ['tor', 'vpn'],
+    ]);
+  });
+
+  it('keep their id once saved, or once something points at them', async () => {
+    const saved = group('exits', ['tor', 'vpn'], { name: 'Exits' });
+    const proxies = setup({ groups: [saved, group('new', ['tor', 'vpn'], { name: 'New' })], default: { group: 'new' } }, { live: { ...settings().proxies, groups: [saved] } });
+    const [first, second] = screen.getAllByLabelText('Name');
+    await fireEvent.input(first, { target: { value: 'Renamed' } });
+    await fireEvent.change(first);
+    await fireEvent.input(second, { target: { value: 'Other' } });
+    await fireEvent.change(second);
+    expect(proxies.groups.map((g) => [g.id, g.name])).toEqual([
+      ['exits', 'Renamed'],
+      ['new', 'Other'],
     ]);
   });
 

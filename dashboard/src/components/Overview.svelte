@@ -6,6 +6,7 @@
   import { statusLabel } from '@deadhop/network-ui/lib/format';
   import { dropId, formatBtc, formatBytes, formatDuration, formatSats, formatTime } from '@deadhop/network-ui/lib/format';
   import { errorRate, statsFor } from '@deadhop/network-ui/lib/relays';
+  import { defaultGroup } from '@deadhop/network-ui/lib/routeview';
   import Chart from './Chart.svelte';
   import RelayBars from '@deadhop/network-ui/components/RelayBars.svelte';
   import KeyBadges from '@deadhop/network-ui/components/KeyBadges.svelte';
@@ -226,7 +227,9 @@
     const via = typeof d === 'object' && 'group' in d ? `${route}: ${label}` : label;
     const line = `${via} · ${check === null ? h.proxy : `${h.proxy} · last check ${check.status}`}`;
     const checked = check === null ? 'Not checked yet.' : `Checked ${formatTime(check.checked_at)}.`;
-    const next = pool.next_switch_at === null ? '' : ` Next switch ${formatTime(pool.next_switch_at)}.`;
+    // Only a group switches; the soonest switch of any group may be a rule's.
+    const switchAt = defaultGroup(pool)?.next_switch_at ?? null;
+    const next = switchAt === null ? '' : ` Next switch ${formatTime(switchAt)}.`;
     if (pool.state === 'suspended') {
       return {
         stamp: 'suspended',

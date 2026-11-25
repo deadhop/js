@@ -130,7 +130,7 @@ describe.skipIf(!existsSync(chrome) || binary === null)('proxy pool in a real br
 
     await stack.proxies[1].stop();
     await reopenUntil(page, 'Overview', 'only operators are served');
-    await hasText(page, 'No proxy in group group-1 reachable');
+    await hasText(page, 'No proxy in group exits reachable');
     await shot('11-overview-proxy-offline');
     await reopenUntil(page, 'Network', 'Default route: offline: no proxy in Group Exits is reachable');
     await shot('12-group-offline', await section());
@@ -145,7 +145,7 @@ describe.skipIf(!existsSync(chrome) || binary === null)('proxy pool in a real br
     await button(page, 'Overview');
     await hasText(page, 'Transparent proxy');
     await shot('14-overview-proxy-transparent');
-    await gone(page, 'No proxy in group group-1 reachable');
+    await gone(page, 'No proxy in group exits reachable');
     expect(problems).toEqual([]);
   });
 });

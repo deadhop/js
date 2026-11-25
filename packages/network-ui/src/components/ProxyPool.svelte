@@ -3,7 +3,7 @@
   import { keyTag } from '../lib/keys';
   import { I2P_PORT, MAX_PROXIES, buildProxy, editedUrl, i2pProxy, i2pRule, i2pRuleIndex, isNew, newEntry, parseProxy, type ProxyFields, type ProxyKind } from '../lib/proxy';
   import { MAX_RULES, POLICIES, destination, proxyName, usedBy } from '../lib/routes';
-  import { groupStateText } from '../lib/routeview';
+  import { defaultGroup, groupStateText } from '../lib/routeview';
   import type { KeyInfo, ProxyCheck, ProxyPool, ProxySettings } from '../lib/schemas';
   import ProxyGroups from './ProxyGroups.svelte';
   import ProxyStatus from './ProxyStatus.svelte';
@@ -151,9 +151,7 @@
   const stateLine = $derived.by((): string => {
     if (pool === null) return '';
     if (pool.state === 'transparent') return routeState(pool.default, pool.state, null);
-    const d = pool.default;
-    const g = typeof d === 'object' && 'group' in d ? { group: d.group, state: pool.state, active: pool.active, reachable: pool.reachable, next_switch_at: pool.next_switch_at } : null;
-    return `Default route: ${routeState(d, pool.state, g)}.`;
+    return `Default route: ${routeState(pool.default, pool.state, defaultGroup(pool))}.`;
   });
   /** One line per key when the keys have default routes of their own. */
   const lanes = $derived.by((): string[] => {
