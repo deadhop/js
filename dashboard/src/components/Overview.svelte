@@ -163,10 +163,17 @@
     return d.health.service.paused ? 'Invoicing stopped.' : 'Serving. Dials out, never listens.';
   }
 
-  /** What the proxy tile says, from the pool, the live relay states and the last check. */
+  /** What the proxy tile says, from the default route, the live relay states and the last check. */
   function proxyTile(h: Health) {
     const pool = h.proxy_pool;
     const connected = h.relays.filter((r) => r.connected).length;
+    const named = (id: string) => {
+      const p = pool.proxies.find((x) => x.id === id);
+      return p === undefined ? id : p.name === '' ? p.url : p.name;
+    };
+    const d = pool.default;
+    /** The default route, in words. */
+    const route = d === 'direct' || d === 'block' ? d : 'proxy' in d ? named(d.proxy) : `group ${d.group}`;
     if (pool.state === 'transparent') {
       return {
         stamp: 'declared',
@@ -181,15 +188,25 @@
       return {
         stamp: 'none',
         stampClass: 'badge to_fix',
-        title: 'None',
+        title: pool.total === 0 ? 'None' : 'Direct',
         tone: 'warn',
-        line: 'direct',
-        text: 'Relays connect straight to this machine and can see its IP address.',
+        line: pool.total === 0 ? 'direct' : 'default route: direct',
+        text: pool.total === 0 ? 'Relays connect straight to this machine and can see its IP address.' : 'Relays that no rule sends through a proxy connect straight to this machine and can see its IP address.',
+      };
+    }
+    if (pool.state === 'blocked') {
+      return {
+        stamp: 'rules only',
+        stampClass: 'badge detected',
+        title: 'Rules only',
+        tone: 'soft',
+        line: 'default route: block',
+        text: 'Relays that no rule matches are not connected. The rules decide where the others go.',
       };
     }
     if (pool.state === 'offline') {
       const what: Record<Health['proxy_pool']['posture'], string> = {
-        off: 'Kill switch: every relay is disconnected until a proxy is back.',
+        off: 'Kill switch: the relays on the default route are disconnected until it is back.',
         admin_only: 'Relays connect straight, and only operators are served.',
         invoicing_only: 'Relays connect straight, and only invoicing is served.',
         open: 'Relays connect straight and everything is served.',
@@ -198,17 +215,16 @@
       return {
         stamp: 'offline',
         stampClass: 'badge fail',
-        title: pool.reachable > 0 ? 'First proxy down' : 'No proxy reachable',
+        title: typeof d === 'object' && 'group' in d ? `No proxy in ${route} reachable` : `${route} down`,
         tone: 'bad',
-        line: `${pool.reachable} of ${pool.total} reachable`,
+        line: `default route: ${route}`,
         text: what[pool.posture],
       };
     }
-    const position = pool.proxies.findIndex((p) => p.id === pool.active);
-    const entry = pool.proxies[position];
-    const label = `#${position + 1}${entry.name === '' ? '' : ` ${entry.name}`}`;
+    const label = pool.active === null ? 'no proxy' : named(pool.active);
     const check = h.proxy_check;
-    const line = `${label} · ${check === null ? h.proxy : `${h.proxy} · last check ${check.status}`}`;
+    const via = typeof d === 'object' && 'group' in d ? `${route}: ${label}` : label;
+    const line = `${via} · ${check === null ? h.proxy : `${h.proxy} · last check ${check.status}`}`;
     const checked = check === null ? 'Not checked yet.' : `Checked ${formatTime(check.checked_at)}.`;
     const next = pool.next_switch_at === null ? '' : ` Next switch ${formatTime(pool.next_switch_at)}.`;
     if (pool.state === 'suspended') {
@@ -218,7 +234,7 @@
         title: 'Rotation suspended',
         tone: 'warn',
         line,
-        text: `Only ${pool.reachable} of ${pool.total} proxies is reachable, so it is not rotating; that one keeps carrying traffic. ${checked}`,
+        text: `Only ${pool.reachable} proxy in ${route} is reachable, so it is not rotating; ${label} keeps carrying traffic. ${checked}`,
       };
     }
     if (connected === 0) {

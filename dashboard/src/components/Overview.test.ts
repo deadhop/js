@@ -244,7 +244,7 @@ describe('Overview', () => {
     setup({ getHealth: vi.fn().mockResolvedValue(health({ proxy: 'socks5://127.0.0.1:9050', proxy_check: proxyCheck(), proxy_pool: activePool({ proxies: [{ ...activePool().proxies[0], name: 'tor' }] }) })) });
     const tile = (await screen.findByText('online')).closest('.tile')!;
     expect(tile.querySelector('.big')!.textContent).toMatch(/^Reachable · \d+ ms$/);
-    expect(tile.textContent).toContain('#1 tor · socks5://127.0.0.1:9050 · last check connected');
+    expect(tile.textContent).toContain('tor · socks5://127.0.0.1:9050 · last check connected');
     expect(tile.textContent).toContain('1 of 1 relays through it: they see the proxy, not this machine. Checked ');
   });
 
@@ -275,42 +275,60 @@ describe('Overview', () => {
     expect(screen.queryByText(/can see its IP address/)).toBeNull();
   });
 
-  it('shows a suspended rotation, with the proxy in use by position and name', async () => {
-    const p = activePool({ state: 'suspended', mode: 'chaos', total: 3, next_switch_at: null });
-    p.proxies = [{ ...p.proxies[0], id: 'x', name: 'a', reachable: false }, { ...p.proxies[0], name: 'tor' }, { ...p.proxies[0], id: 'z', reachable: false }];
+  it('shows a suspended rotation of the default route’s group, with the proxy in use by name', async () => {
+    const p = activePool({ state: 'suspended', default: { group: 'exits' }, active: 'p2', total: 3, next_switch_at: null });
+    p.proxies = [{ ...p.proxies[0], id: 'x', name: 'a', reachable: false }, { ...p.proxies[0], id: 'p2', name: '' }, { ...p.proxies[0], id: 'z', reachable: false }];
     setup({ getHealth: vi.fn().mockResolvedValue(health({ proxy: 'socks5://127.0.0.1:9050', proxy_pool: p })) });
     const tile = (await screen.findByText('suspended')).closest('.tile')!;
     expect(tile.textContent).toContain('Rotation suspended');
-    expect(tile.textContent).toContain('#2 tor');
-    expect(tile.textContent).toContain('Only 1 of 3 proxies is reachable');
+    expect(tile.textContent).toContain('group exits: socks5://127.0.0.1:9050 · socks5://127.0.0.1:9050');
+    expect(tile.textContent).toContain('Only 1 proxy in group exits is reachable, so it is not rotating; socks5://127.0.0.1:9050 keeps carrying traffic.');
   });
 
-  it('shows the next switch of a rotation', async () => {
-    setup({ getHealth: vi.fn().mockResolvedValue(health({ proxy: 'socks5://127.0.0.1:9050', proxy_pool: activePool({ mode: 'round_robin', next_switch_at: 1_700_003_600 }) })) });
-    expect((await screen.findByText('online')).closest('.tile')!.textContent).toContain('Next switch 2023-11-14 23:13 UTC.');
+  it('shows the next switch of a rotation, and copes with a proxy it does not know', async () => {
+    setup({ getHealth: vi.fn().mockResolvedValue(health({ proxy: 'socks5://127.0.0.1:9050', proxy_pool: activePool({ default: { group: 'exits' }, active: 'ghost', next_switch_at: 1_700_003_600 }) })) });
+    const tile = (await screen.findByText('online')).closest('.tile')!;
+    expect(tile.textContent).toContain('Next switch 2023-11-14 23:13 UTC.');
+    expect(tile.textContent).toContain('group exits: ghost · ');
+    document.body.innerHTML = '';
+    setup({ getHealth: vi.fn().mockResolvedValue(health({ proxy: '', proxy_pool: activePool({ active: null }) })) });
+    expect((await screen.findByText('online')).closest('.tile')!.textContent).toContain('no proxy · ');
   });
 
-  it('says what happens while no proxy is reachable, for each policy', async () => {
+  it('says what happens while the default route has nothing reachable, for each policy', async () => {
     const cases = [
-      ['off', 'Kill switch: every relay is disconnected until a proxy is back.'],
+      ['off', 'Kill switch: the relays on the default route are disconnected until it is back.'],
       ['admin_only', 'Relays connect straight, and only operators are served.'],
       ['invoicing_only', 'Relays connect straight, and only invoicing is served.'],
       ['open', 'Relays connect straight and everything is served.'],
     ] as const;
     for (const [posture, text] of cases) {
       document.body.innerHTML = '';
-      setup({ getHealth: vi.fn().mockResolvedValue(health({ proxy_pool: proxyPool({ state: 'offline', posture, total: 2 }) })) });
-      const tile = (await screen.findByText('No proxy reachable')).closest('.tile')!;
+      setup({ getHealth: vi.fn().mockResolvedValue(health({ proxy_pool: proxyPool({ state: 'offline', default: { group: 'exits' }, posture, total: 2 }) })) });
+      const tile = (await screen.findByText('No proxy in group exits reachable')).closest('.tile')!;
       expect(tile.textContent).toContain(text);
-      expect(tile.textContent).toContain('0 of 2 reachable');
+      expect(tile.textContent).toContain('default route: group exits');
       expect(screen.getByText('offline').className).toBe('badge fail');
     }
   });
 
-  it('says when the strategy is off and only the first proxy is down', async () => {
-    setup({ getHealth: vi.fn().mockResolvedValue(health({ proxy_pool: proxyPool({ state: 'offline', mode: 'off', posture: 'off', reachable: 1, total: 2 }) })) });
-    const tile = (await screen.findByText('First proxy down')).closest('.tile')!;
-    expect(tile.textContent).toContain('1 of 2 reachable');
+  it('names the one proxy of a default route that is down', async () => {
+    const pool = activePool({ state: 'offline', posture: 'off', active: null });
+    pool.proxies[0].name = 'tor';
+    setup({ getHealth: vi.fn().mockResolvedValue(health({ proxy_pool: pool })) });
+    const tile = (await screen.findByText('tor down')).closest('.tile')!;
+    expect(tile.textContent).toContain('default route: tor');
+  });
+
+  it('says when the default route is direct beside a proxy list, or blocks', async () => {
+    setup({ getHealth: vi.fn().mockResolvedValue(health({ proxy_pool: proxyPool({ state: 'direct', total: 1 }) })) });
+    expect(await screen.findByText('Relays that no rule sends through a proxy connect straight to this machine and can see its IP address.')).toBeTruthy();
+    expect(screen.getByText('Direct').className).toBe('big warn');
+    document.body.innerHTML = '';
+    setup({ getHealth: vi.fn().mockResolvedValue(health({ proxy_pool: proxyPool({ state: 'blocked', default: 'block', total: 1 }) })) });
+    const tile = (await screen.findByText('Rules only')).closest('.tile')!;
+    expect(tile.textContent).toContain('default route: block');
+    expect(tile.textContent).toContain('Relays that no rule matches are not connected.');
   });
 
   it('warns when there is no proxy', async () => {
