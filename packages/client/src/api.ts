@@ -1,7 +1,7 @@
 // Typed client for the payment service over ContextVM. Every response is
 // validated before any of it reaches the caller.
 import { Client } from '@contextvm/mcp-sdk/client';
-import { ApplesauceRelayPool, EncryptionMode, NostrClientTransport, type NostrSigner } from '@contextvm/sdk';
+import { ApplesauceRelayPool, EncryptionMode, GiftWrapMode, NostrClientTransport, type NostrSigner } from '@contextvm/sdk';
 import type { z } from 'zod';
 import { observedRelays, observedSigner, stepCounter, type ActivityListener } from './activity.ts';
 import { PowError, powSigner, type MineOptions, type Miner } from './pow.ts';
@@ -197,6 +197,10 @@ export async function connect(signer: NostrSigner, config: ServiceConfig, option
     relayHandler: emit ? observedRelays(new ApplesauceRelayPool(config.relays), emit, next) : config.relays,
     serverPubkey: config.serverPubkey,
     encryptionMode: EncryptionMode.REQUIRED,
+    // Ephemeral gift wraps (kind 21059) from the first message: relays forward
+    // them without keeping them. The payment service accepts both kinds; the
+    // lnaddr node accepts only these.
+    giftWrapMode: GiftWrapMode.EPHEMERAL,
     logLevel: 'silent',
   });
   const client = new Client({ name: options.clientName ?? 'deadhop-client', version: '0.1.0' });

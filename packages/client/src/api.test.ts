@@ -141,10 +141,11 @@ describe('connect', () => {
     expect(mocks.callTool).toHaveBeenCalledWith({ name: 'get_info', arguments: {} });
     expect(mocks.clients[0].info).toMatchObject({ name: 'shop' });
 
-    const options = mocks.transports[0].options as { signer: PrivateKeySigner; relayHandler: string[]; serverPubkey: string; encryptionMode: string };
+    const options = mocks.transports[0].options as { signer: PrivateKeySigner; relayHandler: string[]; serverPubkey: string; encryptionMode: string; giftWrapMode: string };
     expect(options.relayHandler).toEqual(config.relays);
     expect(options.serverPubkey).toBe(PUBKEY);
     expect(options.encryptionMode).toBe('required');
+    expect(options.giftWrapMode).toBe('ephemeral');
     const signed = await options.signer.signEvent(create as never);
     expect(signed.tags.some((t) => t[0] === 'nonce' && t[2] === '6')).toBe(true);
 
