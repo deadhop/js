@@ -19,16 +19,12 @@ const ROUTER: ProxyEntry = {
   id: "r",
   name: "i2pd",
   url: "http://127.0.0.1:4444",
-  keys: [],
-  pool: false,
   i2p: true,
 };
 const TOR: ProxyEntry = {
   id: "t",
   name: "tor",
   url: "socks5://127.0.0.1:9050",
-  keys: [],
-  pool: true,
 };
 const NAMED = `ws://${B32}`;
 const OTHER = "q2fmh7ypkbu3hz2hv6dlz6c3zmnh5vlofb2w7ytsv3qvxmtx4xqa.b32.i2p";
@@ -104,10 +100,9 @@ describe("the I2P router proxy", () => {
     );
     await click("Add to list");
     expect(screen.getByText("I2P router")).toBeTruthy();
+    // Not saved yet, a rule can already name it.
     expect(
-      screen.getByText(
-        "Save this proxy first. Then it can carry your .i2p relays.",
-      ),
+      screen.getByRole("button", { name: "Send .i2p relays through this proxy" }),
     ).toBeTruthy();
     // A second one cannot be made.
     await click("Create proxy");
@@ -122,12 +117,13 @@ describe("the I2P router proxy", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(t.updateNetwork).toHaveBeenCalled());
     expect(patchOf(t).proxies.list[1]).toEqual({
+      id: expect.stringMatching(/^p[0-9a-f]{8}$/),
       name: "",
       url: "http://127.0.0.1:4444",
-      keys: [],
-      pool: false,
       i2p: true,
     });
+    // An I2P router does not become the default route.
+    expect(patchOf(t).proxies.default).toBeUndefined();
   });
 
   it("edits as an I2P router, and can stop being one", async () => {
@@ -154,8 +150,6 @@ describe("the I2P router proxy", () => {
       id: "r",
       name: "i2pd",
       url: "http://127.0.0.1:4444",
-      keys: [],
-      pool: false,
     });
   });
 
