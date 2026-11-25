@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { REASONS, firstRule, proxyName } from '../lib/routes';
-  import { keyLabel, mapRows, proxySummaries, reaches, ruleText, tiles } from '../lib/routeview';
+  import { REASONS, destination, firstRule, proxyName } from '../lib/routes';
+  import { groupSummaries, keyLabel, mapRows, proxySummaries, reaches, ruleText, tiles } from '../lib/routeview';
   import type { KeyInfo, ProxyPool, NetworkSettings } from '../lib/schemas';
 
   // The top-level view: where every relay goes, as the service decided it,
@@ -24,6 +24,7 @@
   const rows = $derived(mapRows(pool.routes, lane));
   const top = $derived(tiles(pool.routes, live, pool));
   const summaries = $derived(proxySummaries(pool.routes, live, pool));
+  const groups = $derived(groupSummaries(live.proxies, pool, keys));
   const fellBack = $derived([...new Set(pool.routes.filter((r) => r.reason === 'fallback').map((r) => r.relay))]);
   const dark = $derived([...new Set(pool.routes.filter((r) => r.via === 'off' && r.reason !== 'blocked').map((r) => r.relay))]);
 
@@ -43,8 +44,7 @@
       const i = firstRule(rules, k.id, url);
       if (i < 0) return { key: k.id, text: 'No rule matches: the default route' };
       const r = rules[i];
-      const to = typeof r.to === 'object' ? `through ${proxyName(proxyOf(r.to.proxy) ?? { name: '', url: r.to.proxy })}` : r.to === 'pool' ? 'the default route' : r.to === 'direct' ? 'direct, no proxy' : 'blocked';
-      return { key: k.id, text: `Rule ${i + 1} matches (${r.match.join(', ')}): ${to}` };
+      return { key: k.id, text: `Rule ${i + 1} matches (${r.match.join(', ')}): ${destination(r.to, live.proxies).toLowerCase()}` };
     });
     return lines.every((l) => l.text === lines[0].text) ? [{ key: '', text: lines[0].text }] : lines;
   });
@@ -72,7 +72,7 @@
       <p class="map-alert bad" role="alert">{`${dark.length === 1 ? '1 relay has' : `${dark.length} relays have`} no route now: ${dark.join(', ')}.`}</p>
     {/if}
     {#if fellBack.length > 0}
-      <p class="map-alert warn" role="status">{`${fellBack.length === 1 ? '1 relay is' : `${fellBack.length} relays are`} on the default route because the proxy their rule names is down: ${fellBack.join(', ')}.`}</p>
+      <p class="map-alert warn" role="status">{`${fellBack.length === 1 ? '1 relay is' : `${fellBack.length} relays are`} on their rule's fallback because the proxy or group the rule names is down: ${fellBack.join(', ')}.`}</p>
     {/if}
 
     <div class="map-tiles">
@@ -116,7 +116,7 @@
         <p class="muted map-empty">No relay is listed.</p>
       {/each}
     </div>
-    <p class="hint">The first matching rule wins; a relay no rule matches takes the default route. A dashed amber row is a fallback while its rule's proxy is down.</p>
+    <p class="hint">The first matching rule wins; a relay no rule matches takes the default route. A dashed amber row is a fallback while its rule's proxy or group is down.</p>
 
     {#if summaries.length > 0}
       <h3 class="map-h">The proxies, and what each is carrying</h3>
@@ -130,7 +130,28 @@
             <span class="mono map-why">{s.url}</span>
             <span><b>{s.carries.length === 1 ? '1 relay' : `${s.carries.length} relays`}</b>{s.fallback.length > 0 ? ` (${s.fallback.length} as a fallback)` : ''}</span>
             <span class="map-why">{s.rules.length === 0 ? 'No rule points here' : `Rule${s.rules.length === 1 ? '' : 's'} ${s.rules.join(', ')} point${s.rules.length === 1 ? 's' : ''} here`}</span>
-            <span class="map-why">{s.position === null ? 'Rules only: not in the default route' : `Default route, ${s.position} in order`}</span>
+            <span class="map-why">{`${s.groups.length === 0 ? 'In no group' : `In ${s.groups.map((g) => `group ${g}`).join(', ')}`}${s.inDefault ? ' · on the default route' : ''}`}</span>
+          </div>
+        {/each}
+      </div>
+    {/if}
+
+    {#if groups.length > 0}
+      <h3 class="map-h">The groups, and the proxy each uses now</h3>
+      <div class="map-proxies">
+        {#each groups as g (g.id)}
+          <div class="map-proxy">
+            <div class="map-proxy-head">
+              <span class="via-pill pool"><span class="via-dot"></span>{g.name}</span>
+              <span class="map-proxy-state">{g.strategy}</span>
+            </div>
+            <span class="map-why">{g.members.join(' → ')}</span>
+            {#each g.lines as l (l.key)}
+              <span class={`map-proxy-state ${l.tone === 'ok' ? 'ok' : 'warn'}`}>{l.key === '' ? l.text : `${keyLabel(keys, l.key)}: ${l.text}`}</span>
+            {:else}
+              <span class="map-why">No key uses it now</span>
+            {/each}
+            <span class="map-why">{g.inDefault ? 'On the default route' : 'Not on the default route'}</span>
           </div>
         {/each}
       </div>

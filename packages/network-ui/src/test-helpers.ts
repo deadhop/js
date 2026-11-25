@@ -1,5 +1,5 @@
 // Fixtures shared by the unit tests.
-import type { I2pLookup, KeyInfo, NetworkHealth, NetworkSettings, PrivacyAudit, ProxyCheck, ProxyPool, RelayHistory, RelayStats } from './lib/schemas';
+import type { I2pLookup, KeyInfo, LaneState, NetworkHealth, NetworkSettings, PrivacyAudit, ProxyCheck, ProxyGroup, ProxyPool, RelayHistory, RelayStats } from './lib/schemas';
 export const ADDRESS = 'bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080';
 export const PUBKEY = '79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798';
 export const ADMIN_PUBKEY = 'c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5';
@@ -47,17 +47,18 @@ export function privacyAudit(over: Partial<PrivacyAudit> = {}): PrivacyAudit {
 }
 
 export function proxyPool(over: Partial<ProxyPool> = {}): ProxyPool {
-  return { state: 'direct', posture: 'normal', mode: 'failover', offline: 'kill_switch', transparent: false, active: null, reachable: 0, total: 0, next_switch_at: null, proxies: [], lanes: [], routes: [], ...over };
+  return { state: 'direct', posture: 'normal', default: 'direct', offline: 'kill_switch', transparent: false, active: null, reachable: 0, total: 0, next_switch_at: null, proxies: [], lanes: [], routes: [], ...over };
 }
 
 /** One proxy in use, as the service reports it. */
 export function activePool(over: Partial<ProxyPool> = {}): ProxyPool {
   return proxyPool({
     state: 'active',
+    default: { proxy: 'p1' },
     active: 'p1',
     reachable: 1,
     total: 1,
-    proxies: [{ id: 'p1', name: '', url: 'socks5://127.0.0.1:9050', reachable: true, checked_at: 1_700_000_050, status: 'connected', reason: null, keys: [], pool: true }],
+    proxies: [{ id: 'p1', name: '', url: 'socks5://127.0.0.1:9050', reachable: true, checked_at: 1_700_000_050, status: 'connected', reason: null }],
     ...over,
   });
 }
@@ -88,7 +89,7 @@ export function settings(over: Partial<NetworkSettings> = {}): NetworkSettings {
     relays: ['ws://127.0.0.1:7777'],
     relay_keys: {},
     relay_names: {},
-    proxies: { list: [], mode: 'failover', rotate_secs: 3600, chaos_min_secs: 300, chaos_max_secs: 900, offline: 'kill_switch', transparent: false, rules: [], i2p_registries: [...REGISTRIES] },
+    proxies: { list: [], groups: [], default: 'direct', default_keys: {}, offline: 'kill_switch', transparent: false, rules: [], i2p_registries: [...REGISTRIES] },
     ...over,
   };
 }
@@ -101,4 +102,14 @@ export function settingsView(over: Record<string, unknown> = {}) {
     fixed: { network: 'regtest', keys: keyInfos(), proxy_locked: false },
     ...over,
   };
+}
+
+/** A group of proxies, round robin unless said otherwise. */
+export function group(id: string, proxies: string[], over: Partial<ProxyGroup> = {}): ProxyGroup {
+  return { id, name: '', proxies, strategy: 'round_robin', rotate_secs: 3600, chaos_min_secs: 300, chaos_max_secs: 900, ...over };
+}
+
+/** One key's default route and groups, as the service reports them. */
+export function lane(key: string, over: Partial<LaneState> = {}): LaneState {
+  return { key, default: 'direct', state: 'direct', active: null, reachable: 0, next_switch_at: null, uses_default: true, groups: [], ...over };
 }

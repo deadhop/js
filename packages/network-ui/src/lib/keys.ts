@@ -1,7 +1,6 @@
-// The service's keys and which relays and proxies each one uses. A relay or a
-// proxy lists the keys that may use it; an empty list is every key.
-import { usesDefault } from './routes';
-import type { KeyInfo, ProxySettings, NetworkSettings } from './schemas';
+// The service's keys and which relays each one uses. A relay lists the keys
+// that may use it; an empty list is every key.
+import type { KeyInfo, NetworkSettings } from './schemas';
 
 export const ADMIN = 'admin';
 const bare = (url: string) => url.replace(/\/$/, '');
@@ -44,21 +43,11 @@ export const relayKeysText = (m: NetworkSettings['relay_keys']) =>
 export const relaysOf = (relays: string[], relayKeys: NetworkSettings['relay_keys'], id: string, ids: string[]) =>
   relays.filter((r) => relayUsers(relayKeys, r, ids).includes(id));
 
-/** The proxies one key uses. */
-export const proxiesOf = (proxies: ProxySettings, id: string, ids: string[]) => proxies.list.filter((p) => usersOf(p.keys, ids).includes(id));
-
 /** Why this assignment cannot be saved, or an empty string. */
 export function assignmentProblem(keys: KeyInfo[], form: NetworkSettings): string {
   const ids = keys.map((k) => k.id);
-  for (const k of keys) {
-    if (relaysOf(form.relays, form.relay_keys, k.id, ids).length === 0) return `No relay is assigned to ${k.label}: it could not be reached. Give it one.`;
-  }
-  if (form.proxies.transparent || form.proxies.list.length === 0) return '';
-  for (const k of keys) {
-    const inPool = proxiesOf(form.proxies, k.id, ids).some((p) => p.pool);
-    if (!inPool && usesDefault(form, k.id, ids)) return `No proxy in the default route is assigned to ${k.label}: its relays would have no way out. Give it a proxy.`;
-  }
-  return '';
+  const bare = keys.find((k) => relaysOf(form.relays, form.relay_keys, k.id, ids).length === 0);
+  return bare === undefined ? '' : `No relay is assigned to ${bare.label}: it could not be reached. Give it one.`;
 }
 
 const TAGS: Record<string, string> = { invoices: 'Invoices', admin: 'Admin' };

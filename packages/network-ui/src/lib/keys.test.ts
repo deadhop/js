@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ADMIN, assignmentProblem, dependents, keyTag, proxiesOf, relayKeysFor, relayKeysText, relayUsers, relaysOf, replacements, toggled, usersOf } from './keys';
+import { ADMIN, assignmentProblem, dependents, keyTag, relayKeysFor, relayKeysText, relayUsers, relaysOf, replacements, toggled, usersOf } from './keys';
 import { keyInfos, settings } from '../test-helpers';
 
 const ids = ['invoices', 'admin'];
@@ -31,29 +31,17 @@ describe('who uses what', () => {
     expect(relayKeysText({ 'wss://b.example/': ['admin', 'invoices'], 'wss://a.example': ['invoices'] })).toBe(relayKeysText({ 'wss://a.example': ['invoices'], 'wss://b.example': ['invoices', 'admin'] }));
   });
 
-  it("lists one key's relays and proxies", () => {
+  it("lists one key's relays", () => {
     const relays = ['wss://a.example', 'wss://b.example'];
     expect(relaysOf(relays, { 'wss://b.example': ['invoices'] }, 'admin', ids)).toEqual(['wss://a.example']);
-    const proxies = { ...settings().proxies, list: [{ id: 'a', name: '', url: 'socks5://h:1', keys: ['invoices'], pool: true }, { id: 'b', name: '', url: 'socks5://h:2', keys: [], pool: true }] };
-    expect(proxiesOf(proxies, 'admin', ids).map((p) => p.id)).toEqual(['b']);
   });
 
-  it('names what cannot be saved: a key with no relay, or no proxy beside a list', () => {
+  it('names a key with no relay, which could not be reached', () => {
     const keys = keyInfos();
     const ok = settings({ relays: ['wss://a.example', 'wss://b.example'], relay_keys: { 'wss://b.example': ['invoices'] } });
     expect(assignmentProblem(keys, ok)).toBe('');
     const noRelay = settings({ relays: ['wss://a.example'], relay_keys: { 'wss://a.example': ['invoices'] } });
     expect(assignmentProblem(keys, noRelay)).toContain('No relay is assigned to Administration');
-    const only = (keysOf: string[], transparent = false) => settings({ proxies: { ...settings().proxies, transparent, list: [{ id: 'a', name: '', url: 'socks5://h:1', keys: keysOf, pool: true }] } });
-    expect(assignmentProblem(keys, only(['invoices']))).toContain('No proxy in the default route is assigned to Administration');
-    // A proxy kept out of the default route does not count, unless no relay of the key takes it.
-    const rulesOnly = settings({ proxies: { ...settings().proxies, list: [{ id: 'a', name: '', url: 'socks5://h:1', keys: [], pool: false }] } });
-    expect(assignmentProblem(keys, rulesOnly)).toContain('Public invoices');
-    const allRuled = { ...rulesOnly, proxies: { ...rulesOnly.proxies, rules: [{ name: '', match: ['*'], keys: [], to: { proxy: 'a' }, fallback: 'offline' as const }] } };
-    expect(assignmentProblem(keys, allRuled)).toBe('');
-    expect(assignmentProblem(keys, only([]))).toBe('');
-    // Nothing to assign when the proxy is the operator's own, or there is none.
-    expect(assignmentProblem(keys, only(['invoices'], true))).toBe('');
   });
 
   it('shortens key ids for badges', () => {

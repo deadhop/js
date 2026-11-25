@@ -1,8 +1,9 @@
 // What the Network views show, worked out from the service's live routes
 // (health) and the saved settings: rows for the map, the tiles above it, a
 // summary per proxy, and the trace of a relay through the rules.
-import { firstRule, hostPort, isLocalOrOverlay, proxyName } from './routes';
-import type { KeyInfo, ProxyPool, RouteReason, RouteState, Rule, NetworkSettings } from './schemas';
+import { formatDuration } from './format';
+import { defaultFor, destination, firstRule, groupName, hostPort, isLocalOrOverlay, proxyName, sameDestination } from './routes';
+import type { GroupHealth, KeyInfo, NetworkSettings, ProxyPool, ProxySettings, RouteReason, RouteState, Rule } from './schemas';
 
 /** One line of the map: a relay, for some keys, and where it goes. */
 export interface MapRow {
@@ -80,13 +81,17 @@ export interface ProxySummary {
   fallback: string[];
   /** Numbers (from 1) of the rules that point at it. */
   rules: number[];
-  /** Position in the default route (from 1), or null when it is kept for rules only. */
-  position: number | null;
+  /** The groups it is in, by name. */
+  groups: string[];
+  /** Whether a key's default route is this proxy, or a group it is in. */
+  inDefault: boolean;
 }
 
 export function proxySummaries(routes: RouteState[], live: NetworkSettings, pool: ProxyPool): ProxySummary[] {
-  const inPool = live.proxies.list.filter((e) => e.pool);
-  return live.proxies.list.map((e) => {
+  const p = live.proxies;
+  const defaults = [p.default, ...Object.values(p.default_keys)];
+  return p.list.map((e) => {
+    const groups = p.groups.filter((g) => g.proxies.includes(e.id));
     const health = pool.proxies.find((p) => p.id === e.id);
     const through = routes.filter((r) => r.proxy === e.id);
     return {
@@ -96,8 +101,9 @@ export function proxySummaries(routes: RouteState[], live: NetworkSettings, pool
       reachable: health?.reachable ?? null,
       carries: [...new Set(through.map((r) => r.relay))],
       fallback: [...new Set(through.filter((r) => r.reason === 'fallback').map((r) => r.relay))],
-      rules: live.proxies.rules.flatMap((r, i) => (typeof r.to === 'object' && r.to.proxy === e.id ? [i + 1] : [])),
-      position: e.pool ? inPool.indexOf(e) + 1 : null,
+      rules: p.rules.flatMap((r, i) => (sameDestination(r.to, { proxy: e.id }) ? [i + 1] : [])),
+      groups: groups.map(groupName),
+      inDefault: defaults.some((d) => sameDestination(d, { proxy: e.id }) || groups.some((g) => sameDestination(d, { group: g.id }))),
     };
   });
 }
@@ -120,3 +126,52 @@ export function trace(rules: Rule[], key: string, relay: string): Check[] {
 
 /** A key's label, or its id when the service did not name it. */
 export const keyLabel = (keys: KeyInfo[], id: string) => keys.find((k) => k.id === id)?.label ?? id;
+
+/** A group's state for one key, in words: what it uses now and when it switches. */
+export function groupStateText(g: GroupHealth, pool: Pick<ProxyPool, 'proxies'>, now = Math.floor(Date.now() / 1000)): string {
+  const proxy = pool.proxies.find((x) => x.id === g.active);
+  const using = proxy === undefined ? '' : `using ${proxyName(proxy)}`;
+  const next = g.next_switch_at === null ? '' : ` · next switch in ${formatDuration(Math.max(0, g.next_switch_at - now))}`;
+  switch (g.state) {
+    case 'active':
+      return `${using}${next}`;
+    case 'suspended':
+      return `${using} · rotation suspended: only ${g.reachable} proxy is reachable`;
+    case 'offline':
+      return 'offline: no proxy in the group is reachable';
+    default:
+      return g.state;
+  }
+}
+
+/** One group as the service runs it: per key, or once when every key agrees. */
+export interface GroupSummary {
+  id: string;
+  name: string;
+  members: string[];
+  strategy: string;
+  /** What it does now: one line per key, or one with key '' when the keys agree. */
+  lines: { key: string; text: string; tone: 'ok' | 'warn' | 'bad' }[];
+  /** Whether a default route uses it. */
+  inDefault: boolean;
+}
+
+const STRATEGY_TITLES: Record<string, string> = { failover: 'Failover', round_robin: 'Round-robin', chaos: 'Chaos' };
+
+export function groupSummaries(live: Pick<ProxySettings, 'list' | 'groups' | 'default' | 'default_keys'>, pool: ProxyPool | null, keys: KeyInfo[], now?: number): GroupSummary[] {
+  return live.groups.map((g) => {
+    const per = (pool?.lanes ?? []).flatMap((l) => {
+      const h = l.groups.find((x) => x.group === g.id);
+      return h === undefined ? [] : [{ key: l.key, text: groupStateText(h, pool!, now), tone: h.state === 'active' ? ('ok' as const) : h.state === 'suspended' ? ('warn' as const) : ('bad' as const) }];
+    });
+    const lines = per.length > 1 && per.every((x) => x.text === per[0].text) ? [{ ...per[0], key: '' }] : per;
+    return {
+      id: g.id,
+      name: groupName(g),
+      members: g.proxies.map((id) => destination({ proxy: id }, live)),
+      strategy: STRATEGY_TITLES[g.strategy],
+      lines,
+      inDefault: keys.some((k) => sameDestination(defaultFor(live, k.id), { group: g.id })),
+    };
+  });
+}

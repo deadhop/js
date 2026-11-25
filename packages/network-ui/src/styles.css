@@ -972,8 +972,26 @@ dialog.replace-relay h2 {
   gap: 0.4rem 0.75rem;
   font-size: 0.8125rem;
 }
-.pool-toggle {
+.group-body {
+  grid-column: 3 / -1;
+  display: grid;
+  gap: 0.4rem;
+}
+.group-members {
+  display: grid;
+  gap: 0.3rem;
+}
+.group-members li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+}
+.group-members .pos {
   font-size: 0.8125rem;
+  color: var(--muted);
+  min-width: 1ch;
 }
 .relay-edit li .via-pill {
   font-size: 0.75rem;

@@ -1,28 +1,11 @@
 <script lang="ts">
   import type { NetworkApi } from '../lib/network-api';
-  import { formatDuration } from '../lib/format';
-  import { keyTag, toggled, usersOf } from '../lib/keys';
-  import {
-    I2P_PORT,
-    MAX_PROXIES,
-    buildProxy,
-    editedUrl,
-    i2pProxy,
-    i2pRule,
-    i2pRuleIndex,
-    isNew,
-    move,
-    newEntry,
-    parseProxy,
-    poolOf,
-    shortDuration,
-    type ProxyFields,
-    type ProxyKind,
-  } from '../lib/proxy';
-  import { destination, proxyName } from '../lib/routes';
-  import type { KeyInfo, OfflinePolicy, ProxyCheck, ProxyMode, ProxyPool, ProxySettings } from '../lib/schemas';
-  import Duration from './Duration.svelte';
-  import KeyChips from './KeyChips.svelte';
+  import { keyTag } from '../lib/keys';
+  import { I2P_PORT, MAX_PROXIES, buildProxy, editedUrl, i2pProxy, i2pRule, i2pRuleIndex, isNew, newEntry, parseProxy, type ProxyFields, type ProxyKind } from '../lib/proxy';
+  import { MAX_RULES, POLICIES, destination, proxyName, usedBy } from '../lib/routes';
+  import { groupStateText } from '../lib/routeview';
+  import type { KeyInfo, ProxyCheck, ProxyPool, ProxySettings } from '../lib/schemas';
+  import ProxyGroups from './ProxyGroups.svelte';
   import ProxyStatus from './ProxyStatus.svelte';
 
   let {
@@ -35,7 +18,7 @@
     registriesAt = 'under Settings',
   }: {
     api: NetworkApi;
-    /** The service's keys, for choosing which may use each proxy. */
+    /** The service's keys. */
     keys: KeyInfo[];
     /** The form's proxy settings (changed in place). */
     proxies: ProxySettings;
@@ -49,68 +32,13 @@
     registriesAt?: string;
   } = $props();
 
-  const MODES: { value: ProxyMode; title: string; text: string }[] = [
-    { value: 'off', title: 'Off', text: 'Use the first proxy in the list and never switch. While it is down, the policy below applies, even if other proxies are up.' },
-    { value: 'failover', title: 'Failover', text: 'Use the first proxy in the list. If it is down, use the next one.' },
-    { value: 'round_robin', title: 'Round-robin', text: 'Go around the list, one change at a set interval (not per connection).' },
-    { value: 'chaos', title: 'Chaos', text: 'Switch to a random other proxy after a random time between a shortest and a longest interval.' },
-  ];
-  const POLICIES: { value: OfflinePolicy; title: string; text: string; clearnet: boolean }[] = [
-    { value: 'kill_switch', title: 'Kill switch', text: 'Disconnect from every relay. The service is off until a proxy is back.', clearnet: false },
-    { value: 'admin_only', title: 'Operators only', text: 'Connect straight, but answer operators only, so the proxies can be repaired (unless they are locked on the host).', clearnet: true },
-    { value: 'invoicing_only', title: 'Invoicing only', text: 'Connect straight and keep invoicing on. Operators are not served, so nothing can be managed.', clearnet: true },
-    { value: 'open', title: 'Carry on', text: 'Connect straight and serve everyone as usual.', clearnet: true },
-  ];
-
   const full = $derived(proxies.list.length >= MAX_PROXIES);
 
-  /** With the strategy off, the default-route proxies that are first for no key: never used. */
-  const unused = $derived.by((): Set<string> => {
-    if (proxies.mode !== 'off') return new Set();
-    const ids = keys.map((k) => k.id);
-    const route = poolOf(proxies);
-    const used = new Set(ids.flatMap((k) => route.filter((p) => usersOf(p.keys, ids).includes(k)).slice(0, 1).map((p) => p.id)));
-    return new Set(route.filter((p) => !used.has(p.id)).map((p) => p.id));
-  });
-
-  // ---- the list ----
-  let dragFrom = $state<number | null>(null);
-  let dragOver = $state<number | null>(null);
-
-  function moveTo(from: number, to: number) {
-    proxies.list = move(proxies.list, from, to);
-  }
-
-  function endDrag() {
-    dragFrom = null;
-    dragOver = null;
-  }
-
-  function drop(to: number) {
-    if (dragFrom !== null) moveTo(dragFrom, to);
-    endDrag();
-  }
-
-  function gripKey(e: KeyboardEvent, i: number) {
-    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
-    e.preventDefault();
-    moveTo(i, e.key === 'ArrowUp' ? i - 1 : i + 1);
-  }
-
-  function inPool(i: number, on: boolean) {
-    proxies.list = proxies.list.map((e, j) => (j === i ? { ...e, pool: on } : e));
-  }
-
-  /** What a proxy carries now and which rules point at it. */
-  function carrying(id: string): string {
-    const relays = [...new Set((pool?.routes ?? []).filter((r) => r.proxy === id).map((r) => r.relay))];
-    const rules = proxies.rules.flatMap((r, i) => (typeof r.to === 'object' && r.to.proxy === id ? [i + 1] : []));
-    const carries = `Carries ${relays.length === 1 ? '1 relay' : `${relays.length} relays`} now`;
-    return rules.length === 0 ? carries : `${carries} · rule${rules.length === 1 ? '' : 's'} ${rules.join(', ')} point${rules.length === 1 ? 's' : ''} here`;
-  }
-
-  function useProxy(i: number, id: string, on: boolean) {
-    proxies.list = proxies.list.map((e, j) => (j === i ? { ...e, keys: toggled(e.keys, id, on, keys.map((k) => k.id)) } : e));
+  /** What a proxy carries now and what points at it. */
+  function carrying(id: string, used: string[]): string {
+    const relays = new Set((pool?.routes ?? []).filter((r) => r.proxy === id).map((r) => r.relay)).size;
+    const carries = `Carries ${relays === 1 ? '1 relay' : `${relays} relays`} now`;
+    return used.length === 0 ? `${carries} · nothing points at it yet` : `${carries} · used by ${used.join(', ')}`;
   }
 
   function statusOf(id: string) {
@@ -120,6 +48,8 @@
   // ---- create and edit ----
   let draft = $state<{ index: number | null; name: string; fields: ProxyFields } | null>(null);
   let draftError = $state('');
+  /** Said once the first proxy became the default route. */
+  let notice = $state('');
 
   function create() {
     draft = { index: null, name: '', fields: { ...parseProxy(''), kind: 'socks5', host: '127.0.0.1', port: '9050' } };
@@ -145,8 +75,17 @@
     }
     const name = d.name.trim();
     const i2p = d.fields.kind === 'i2p';
-    if (d.index === null) proxies.list = [...proxies.list, newEntry(name, built.url, i2p)];
-    else proxies.list = proxies.list.map((e, i) => (i === d.index ? { ...e, name, url: built.url, i2p } : e));
+    if (d.index === null) {
+      const entry = newEntry(name, built.url, i2p, proxies.list.map((e) => e.id));
+      // The first proxy (not an I2P router, which carries .i2p relays only)
+      // becomes the default route, as it always did; it can be changed under Rules.
+      const first = !i2p && proxies.default === 'direct' && !proxies.list.some((e) => e.i2p !== true);
+      proxies.list = [...proxies.list, entry];
+      if (first) {
+        proxies.default = { proxy: entry.id };
+        notice = `Everything else now goes through ${proxyName(entry)}: it is the default route. Change that under Rules, in the last row.`;
+      }
+    } else proxies.list = proxies.list.map((e, i) => (i === d.index ? { ...e, name, url: built.url, i2p } : e));
     draft = null;
   }
 
@@ -189,36 +128,41 @@
   }
 
   // ---- what the service is doing ----
-  /** One line per key when the keys do not all use the same proxies. */
-  const lanes = $derived.by((): string[] => {
-    if (pool === null || !proxies.list.some((p) => p.keys.length > 0)) return [];
-    // With the strategy off nothing switches: only a key that lost its first proxy is news.
-    return pool.lanes.filter((l) => pool!.mode !== 'off' || l.state === 'offline').map((l) => {
-      const label = keys.find((k) => k.id === l.key)?.label ?? keyTag(l.key);
-      const proxy = pool!.proxies.find((p) => p.id === l.active);
-      const using = proxy ? `using ${proxy.name === '' ? proxy.url : proxy.name}` : l.state === 'offline' ? (pool!.mode === 'off' ? 'its first proxy is down' : 'no proxy reachable') : l.state;
-      return `${label}: ${using}`;
-    });
-  });
-  const stateLine = $derived.by((): string => {
-    if (pool === null) return '';
-    const position = pool.active === null ? -1 : pool.proxies.findIndex((p) => p.id === pool.active);
-    const policy = POLICIES.find((p) => p.value === pool.offline)!.title.toLowerCase();
-    switch (pool.state) {
+  /** The proxy or group a destination names, as shown. */
+  const named = (d: ProxyPool['default']) => destination(d, proxies);
+
+  /** What a default route does now, from its state, in words. */
+  function routeState(d: ProxyPool['default'], state: ProxyPool['state'], g: Parameters<typeof groupStateText>[0] | null): string {
+    switch (state) {
       case 'transparent':
         return 'Transparent proxy declared: nothing is checked.';
       case 'direct':
-        return 'No proxy is listed: relays connect straight.';
-      case 'active': {
-        if (pool.mode === 'off') return '';
-        const next = pool.next_switch_at === null ? '' : ` · next switch in ${formatDuration(Math.max(0, pool.next_switch_at - Math.floor(Date.now() / 1000)))}`;
-        return `Active · proxy ${position + 1} of ${pool.total}${next}`;
-      }
-      case 'suspended':
-        return `Suspended: rotation needs 2 reachable proxies, ${pool.reachable} is. That proxy keeps carrying traffic.`;
+        return 'direct: relays that no rule matches connect straight';
+      case 'blocked':
+        return 'blocked: relays that no rule matches are not connected';
+      case 'offline':
+        return `offline: ${typeof d === 'object' && 'group' in d ? `no proxy in ${named(d)} is reachable` : `${named(d)} is down`} · ${POLICIES.find((p) => p.value === pool!.offline)!.title.toLowerCase()}`;
       default:
-        return pool.mode === 'off' && pool.reachable > 0 ? `Offline: the first proxy is down and the strategy is off · ${policy}` : `Offline: no proxy is reachable · ${policy}`;
+        return g === null ? `${named(d)}, reachable` : `${named(d)}, ${groupStateText(g, pool!)}`;
     }
+  }
+
+  /** The default route now (the public invoices key's, as the service reports it). */
+  const stateLine = $derived.by((): string => {
+    if (pool === null) return '';
+    if (pool.state === 'transparent') return routeState(pool.default, pool.state, null);
+    const d = pool.default;
+    const g = typeof d === 'object' && 'group' in d ? { group: d.group, state: pool.state, active: pool.active, reachable: pool.reachable, next_switch_at: pool.next_switch_at } : null;
+    return `Default route: ${routeState(d, pool.state, g)}.`;
+  });
+  /** One line per key when the keys have default routes of their own. */
+  const lanes = $derived.by((): string[] => {
+    if (pool === null || Object.keys(proxies.default_keys).length === 0) return [];
+    return pool.lanes.map((l) => {
+      const label = keys.find((k) => k.id === l.key)?.label ?? keyTag(l.key);
+      const g = typeof l.default === 'object' && 'group' in l.default ? (l.groups.find((x) => x.group === (l.default as { group: string }).group) ?? null) : null;
+      return `${label}: ${routeState(l.default, l.state, g)}`;
+    });
   });
 </script>
 
@@ -247,54 +191,25 @@
     <p class="note" role="status">Transparent proxy declared. The service trusts it and checks nothing. Your proxy list and settings are kept for when you turn this off.</p>
   {:else}
     <fieldset class="pool-body" class:greyed={locked} disabled={locked}>
-      <legend class="field-title">Proxy list, in order</legend>
+      <legend class="field-title">Proxy list</legend>
       {#if proxies.list.length === 0}
         <p class="muted">No proxies. Relays connect straight to this machine.</p>
       {/if}
+      {#if notice !== ''}<p class="note" role="status">{notice}</p>{/if}
       <ol class="proxy-list">
         {#each proxies.list as entry, i (entry.id)}
           {@const st = statusOf(entry.id)}
           {@const t = tests[entry.id]}
-          <li
-            class="proxy-row"
-            class:dragging={dragFrom === i}
-            class:drop-target={dragFrom !== null && dragOver === i && dragFrom !== i}
-            ondragover={(e) => {
-              e.preventDefault();
-              dragOver = i;
-            }}
-            ondrop={(e) => {
-              e.preventDefault();
-              drop(i);
-            }}
-          >
-            {#if proxies.list.length > 1}
-              <button
-                type="button"
-                class="grip"
-                draggable="true"
-                aria-label={`Drag to reorder proxy ${i + 1}`}
-                title="Drag to reorder (or use the arrow keys)"
-                ondragstart={(e) => {
-                  dragFrom = i;
-                  e.dataTransfer?.setData('text/plain', String(i));
-                }}
-                ondragend={endDrag}
-                onkeydown={(e) => gripKey(e, i)}
-              >
-                <svg viewBox="0 0 10 16" width="10" height="16" aria-hidden="true">
-                  {#each [2, 8, 14] as y (y)}<circle cx="2" cy={y} r="1.5" /><circle cx="8" cy={y} r="1.5" />{/each}
-                </svg>
-              </button>
-            {/if}
+          {@const used = usedBy(proxies, { proxy: entry.id }, keys)}
+          <li class="proxy-row">
             <span class="pos mono" aria-hidden="true">{i + 1}</span>
             <span class="proxy-id">
               <span class="proxy-name">{entry.name === '' ? 'Unnamed proxy' : entry.name}{#if entry.i2p}<span class="badge i2p-badge">I2P router</span>{/if}</span>
               <code class="mono">{entry.url}</code>
             </span>
             <span class="proxy-state">
-              {#if pool?.active === entry.id}<span class="badge confirmed">in use</span>{/if}
-              {#if isNew(entry)}
+              {#if (pool?.routes ?? []).some((r) => r.proxy === entry.id)}<span class="badge confirmed">in use</span>{/if}
+              {#if isNew(entry, live.list)}
                 <span class="badge not_checked">not saved</span>
               {:else if st === null || st.reachable === null}
                 <span class="badge not_checked">not checked</span>
@@ -304,23 +219,12 @@
                 <span class="badge fail" title={st.reason ?? ''}>unreachable</span>
               {/if}
             </span>
-            <div class="proxy-routes">
-              <label class="check pool-toggle"><input type="checkbox" checked={entry.pool} aria-label={`Proxy ${i + 1} in the default route`} onchange={(e) => inPool(i, e.currentTarget.checked)} /> In the default route</label>
-              {#if !entry.pool}<span class="badge not_checked">rules only</span>{:else if unused.has(entry.id)}<span class="badge not_checked">not used: strategy off</span>{/if}
-              <span class="hint">{carrying(entry.id)}</span>
-            </div>
+            <div class="proxy-routes"><span class="hint">{carrying(entry.id, used)}</span></div>
             <div class="proxy-foot">
-              {#if entry.pool}<KeyChips {keys} assigned={entry.keys} label={`Proxy ${i + 1}`} onchange={(id, on) => useProxy(i, id, on)} />{:else}<span class="hint">Used only by rules that name it.</span>{/if}
               <span class="proxy-actions">
-                {#if proxies.list.length > 1}
-                  <span class="move-pair">
-                    <button type="button" class="sm icon" aria-label={`Move proxy ${i + 1} up`} disabled={i === 0} onclick={() => moveTo(i, i - 1)}>↑</button>
-                    <button type="button" class="sm icon" aria-label={`Move proxy ${i + 1} down`} disabled={i === proxies.list.length - 1} onclick={() => moveTo(i, i + 1)}>↓</button>
-                  </span>
-                {/if}
                 <button type="button" class="sm" aria-label={`Test proxy ${i + 1}`} disabled={t?.checking === true} onclick={() => void test(i)}>{t?.checking ? 'Testing…' : 'Test'}</button>
                 <button type="button" class="sm" aria-label={`Edit proxy ${i + 1}`} onclick={() => edit(i)}>Edit</button>
-                <button type="button" class="sm remove" aria-label={`Remove proxy ${i + 1}`} onclick={() => remove(i)}>Remove</button>
+                <button type="button" class="sm remove" aria-label={`Remove proxy ${i + 1}`} disabled={used.length > 0} title={used.length > 0 ? `Used by ${used.join(', ')}: change those first.` : undefined} onclick={() => remove(i)}>Remove</button>
               </span>
             </div>
             {#if st !== null && st.reachable === false && st.reason !== null}<p class="proxy-reason">{st.reason}</p>{/if}
@@ -344,7 +248,7 @@
               {#if otherI2p}
                 <p class="hint">An I2P router is already listed. Only one can be.</p>
               {:else if draft.fields.kind === 'i2p'}
-                <p class="hint">Your I2P router's HTTP proxy, usually port 4444. I2P names are looked up through it. It starts outside the default route.</p>
+                <p class="hint">Your I2P router's HTTP proxy, usually port 4444. I2P names are looked up through it. Only rules that name it send relays through it.</p>
               {/if}
             </div>
             <div class="field"><label for="proxy-host">Host</label><input id="proxy-host" class="mono" bind:value={draft.fields.host} placeholder="127.0.0.1" /></div>
@@ -373,52 +277,28 @@
           <span class="field-title" id="i2p-title">I2P relays</span>
           <p class="hint">{`${proxyName(router)} carries relays only when a rule sends them to it. Where .i2p names are looked up is ${registriesAt}.`}</p>
           {#if i2pRuleAt >= 0}
-            <p class="hint">{`Rule ${i2pRuleAt + 1} decides where .i2p relays go: ${destination(proxies.rules[i2pRuleAt].to, proxies.list).toLowerCase()}.`}</p>
-          {:else if isNew(router)}
-            <p class="hint">Save this proxy first. Then it can carry your .i2p relays.</p>
+            <p class="hint">{`Rule ${i2pRuleAt + 1} decides where .i2p relays go: ${destination(proxies.rules[i2pRuleAt].to, proxies).toLowerCase()}.`}</p>
           {:else}
             <div class="test-row">
-              <button type="button" onclick={() => routeI2p(router!.id)} disabled={proxies.rules.length >= 16}>Send .i2p relays through this proxy</button>
+              <button type="button" onclick={() => routeI2p(router!.id)} disabled={proxies.rules.length >= MAX_RULES}>Send .i2p relays through this proxy</button>
               <span class="hint inline">Adds a rule. Until then .i2p relays take the default route.</span>
             </div>
           {/if}
         </div>
       {/if}
 
+      <ProxyGroups {keys} {proxies} {live} {pool} />
+
       <div class="field strategy">
         <span class="field-title">Default route</span>
-        <p class="hint">{poolOf(proxies).length === 0 && proxies.list.length > 0 ? 'Every relay that no rule in Rules names goes through the proxies ticked “In the default route” above. None is ticked, so those relays stay offline.' : 'Every relay that no rule in Rules names goes through the proxies ticked “In the default route” above.'}</p>
-        {#if poolOf(proxies).length > 1}
-          <span class="field-title" id="strategy-title">Strategy</span>
-          <div class="segmented" role="radiogroup" aria-labelledby="strategy-title">
-            {#each MODES as m (m.value)}
-              <label class:on={proxies.mode === m.value}><input type="radio" name="proxy-mode" value={m.value} checked={proxies.mode === m.value} onchange={() => (proxies.mode = m.value)} />{m.title}</label>
-            {/each}
-          </div>
-          <p class="hint">{MODES.find((m) => m.value === proxies.mode)!.text}</p>
-          {#if proxies.mode === 'round_robin'}
-            <Duration id="rotate" label="Change proxy every" secs={proxies.rotate_secs} onchange={(v) => (proxies.rotate_secs = v)} />
-          {:else if proxies.mode === 'chaos'}
-            <div class="grid2 tight">
-              <Duration id="chaos-min" label="Shortest time before a change" secs={proxies.chaos_min_secs} onchange={(v) => (proxies.chaos_min_secs = v)} />
-              <Duration id="chaos-max" label="Longest time before a change" secs={proxies.chaos_max_secs} onchange={(v) => (proxies.chaos_max_secs = v)} />
-            </div>
-            <p class="hint">{`A random time in between, now ${shortDuration(proxies.chaos_min_secs)} to ${shortDuration(proxies.chaos_max_secs)}.`}</p>
-          {/if}
-          {#if proxies.mode === 'off'}
-            <!-- The strategy's own description already says what Off does. -->
-          {:else if proxies.mode !== 'failover'}
-            <p class="hint">Rotation needs two reachable proxies. With only one, it is suspended and that proxy keeps carrying traffic.</p>
-          {:else}
-            <p class="hint">After a failure the service returns to an earlier proxy once it has stayed up for 2 minutes.</p>
-          {/if}
-        {/if}
+        <p class="hint">{`Relays that no rule matches go to ${destination(proxies.default, proxies).toLowerCase()}${Object.keys(proxies.default_keys).length > 0 ? ', unless their key has a default route of its own' : ''}. Change it under Rules, in the last row.`}</p>
         {#if stateLine !== ''}<p class="strategy-state" role="status">{stateLine}</p>{/if}
-        {#if lanes.length > 0}<ul class="plain lane-list" aria-label="Proxy in use, per key">{#each lanes as l (l)}<li>{l}</li>{/each}</ul>{/if}
+        {#if lanes.length > 0}<ul class="plain lane-list" aria-label="Default route, per key">{#each lanes as l (l)}<li>{l}</li>{/each}</ul>{/if}
       </div>
 
       <div class="field policy">
-        <span class="field-title" id="policy-title">When no proxy is reachable</span>
+        <span class="field-title" id="policy-title">When the default route has nothing reachable</span>
+        <p class="hint">The same policy applies to a rule that follows the offline policy, and to a rule's fallback when that has nothing reachable either.</p>
         <div class="policy-cards" role="radiogroup" aria-labelledby="policy-title">
           {#each POLICIES as p (p.value)}
             <label class="policy-card" class:on={proxies.offline === p.value} class:clearnet={p.clearnet}>
