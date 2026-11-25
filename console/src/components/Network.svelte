@@ -57,7 +57,7 @@
     // Names only change what is shown: they never reconnect.
     const names = cleanNames(f);
     if (namesText(names) !== namesText(live.relay_names)) patch.relay_names = names;
-    const problem = assignmentProblem(keys, f) || rulesProblem(f, keys, live.proxies.list, pageRelays);
+    const problem = assignmentProblem(keys, f) || rulesProblem(f, keys, pageRelays);
     if (problem !== '') return problem;
     const assigned = relayKeysFor(f.relays, f.relay_keys, ids);
     if (relayKeysText(assigned) !== relayKeysText(relayKeysFor(live.relays, live.relay_keys, ids))) patch.relay_keys = assigned;

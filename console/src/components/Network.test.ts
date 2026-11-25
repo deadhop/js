@@ -139,10 +139,14 @@ describe('Network', () => {
   });
 
   it('forgets a refused change when it is discarded', async () => {
-    const proxies = { ...settings().proxies, list: [{ id: 'a', name: '', url: 'socks5://h:1', keys: [], pool: true }] };
-    setup(networkView({ settings: settings({ proxies }) }));
+    const list = [
+      { id: 'a', name: '', url: 'socks5://h:1' },
+      { id: 'b', name: '', url: 'socks5://h:2' },
+    ];
+    setup(networkView({ settings: settings({ proxies: { ...settings().proxies, list } }) }));
     await fireEvent.click(await screen.findByRole('tab', { name: /^Proxies/ }));
-    await fireEvent.click(await screen.findByLabelText('Proxy 1 used by Administration'));
+    await fireEvent.click(await screen.findByRole('button', { name: 'New group' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Take socks5://h:2 out of Group 1' }));
     await save();
     expect(document.querySelector('.save-text.failed')).toBeTruthy();
     await fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
@@ -222,22 +226,22 @@ describe('Network', () => {
     expect(screen.queryByText('wss://a.example')).toBeNull();
   });
 
-  it('explains each key, with how many relays and proxies it uses', async () => {
+  it('explains each key, with how many relays it uses and where everything else goes', async () => {
     setup(networkView({ settings: settings({ relays: ['ws://127.0.0.1:7777', 'wss://b.example'], relay_keys: { 'wss://b.example': ['invoices'] } }) }));
     const keys = await screen.findByRole('list', { name: 'Keys' });
     const lines = [...keys.querySelectorAll('li')].map((li) => li.textContent!.replace(/\s+/g, ' ').trim());
     expect(lines[0]).toContain('Public invoices');
-    expect(lines[0]).toContain('2 relays · no proxies');
+    expect(lines[0]).toContain('2 relays · everything else: direct, no proxy');
     expect(lines[1]).toContain('Administration');
     expect(lines[1]).toContain('Operators sign in here');
-    expect(lines[1]).toContain('1 relay · no proxies');
+    expect(lines[1]).toContain('1 relay · everything else: direct, no proxy');
   });
 
-  it('counts the proxies each key uses', async () => {
-    const proxies = { ...settings().proxies, list: [{ id: 'a', name: '', url: 'socks5://h:1', keys: ['invoices'], pool: true }, { id: 'b', name: '', url: 'socks5://h:2', keys: [], pool: true }] };
+  it("names each key's default route", async () => {
+    const proxies = { ...settings().proxies, list: [{ id: 'a', name: 'tor', url: 'socks5://h:1' }], default: { proxy: 'a' }, default_keys: { admin: 'block' as const } };
     setup(networkView({ settings: settings({ proxies }) }));
     const keys = await screen.findByRole('list', { name: 'Keys' });
-    expect([...keys.querySelectorAll('.count')].map((c) => c.textContent)).toEqual(['1 relay · 2 proxies', '1 relay · 1 proxy']);
+    expect([...keys.querySelectorAll('.count')].map((c) => c.textContent)).toEqual(['1 relay · everything else: tor', '1 relay · everything else: nowhere: blocked']);
   });
 
   describe('which key uses which relay', () => {
@@ -323,12 +327,12 @@ describe('Network', () => {
       await waitFor(() => expect(t.updateNetwork).toHaveBeenCalledWith({ relays: ['ws://127.0.0.1:7777'], relay_keys: {} }));
     });
 
-    it('refuses to leave a key with no proxy while there is a list', async () => {
-      const proxies = { ...settings().proxies, list: [{ id: 'a', name: '', url: 'socks5://h:1', keys: [], pool: true }] };
-      const t = setup(networkView({ settings: settings({ proxies }) }));
-      await fireEvent.click(await screen.findByRole('tab', { name: /^Proxies/ }));
-      await fireEvent.click(await screen.findByLabelText('Proxy 1 used by Administration'));
-      expect(screen.getByText('No proxy in the default route is assigned to Administration: its relays would have no way out. Give it a proxy.')).toBeTruthy();
+    it('refuses a default route that blocks every relay of a key', async () => {
+      const t = setup(networkView());
+      await fireEvent.click(await screen.findByRole('tab', { name: /^Rules/ }));
+      await fireEvent.click(await screen.findByRole('button', { name: 'Edit the default route' }));
+      await fireEvent.click(screen.getAllByLabelText(/Nowhere: block/)[0]);
+      expect(screen.getByText('The rules and the default route block every relay of Public invoices: it could not be reached.')).toBeTruthy();
       await save();
       expect(t.updateNetwork).not.toHaveBeenCalled();
     });
@@ -410,16 +414,17 @@ describe('Network', () => {
     expect(api.updateNetwork).not.toHaveBeenCalled();
   });
 
-  it('tests a saved proxy by its id, and refuses proxy intervals the service would refuse', async () => {
+  it('tests a saved proxy by its id, and refuses group intervals the service would refuse', async () => {
     const list = [
-      { id: 'a', name: '', url: 'socks5://h:1', keys: [], pool: true },
-      { id: 'b', name: '', url: 'socks5://h:2', keys: [], pool: true },
+      { id: 'a', name: '', url: 'socks5://h:1' },
+      { id: 'b', name: '', url: 'socks5://h:2' },
     ];
-    const t = setup(networkView({ settings: settings({ proxies: { ...settings().proxies, list, rotate_secs: 10 } }) }));
+    const groups = [{ id: 'g', name: 'Exits', proxies: ['a', 'b'], strategy: 'round_robin' as const, rotate_secs: 10, chaos_min_secs: 300, chaos_max_secs: 900 }];
+    const t = setup(networkView({ settings: settings({ proxies: { ...settings().proxies, list, groups } }) }));
     await fireEvent.click(await screen.findByRole('tab', { name: /^Proxies/ }));
     await fireEvent.click(screen.getByRole('button', { name: 'Test proxy 1' }));
     await waitFor(() => expect(t.checkProxy).toHaveBeenCalledWith({ id: 'a' }));
-    expect(screen.getByText('Intervals run from 1 minute to 7 days.')).toBeTruthy();
+    expect(screen.getByText('Group Exits: intervals run from 1 minute to 7 days.')).toBeTruthy();
     await save();
     expect(t.updateNetwork).not.toHaveBeenCalled();
   });
