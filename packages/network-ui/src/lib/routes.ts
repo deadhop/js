@@ -1,4 +1,4 @@
-// Routing rules, as the service applies them (server/src/routes.rs). The
+// Routing rules, as the service applies them (deadhop/server crates/netengine/src/routes.rs). The
 // service decides the live routes and reports them in health; this copy is for
 // what the page has to work out before saving: the route of a relay being
 // added, the preview of a rule being edited, and the guards on a save. The

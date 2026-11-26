@@ -11,7 +11,10 @@ import puppeteer, { type Browser, type Page } from 'puppeteer-core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const root = resolve(here, '../..');
+// This repository, and the deadhop workspace around it (the regtest stack,
+// data/dev and the server and lnaddr builds): set DEADHOP_WORKSPACE when it is elsewhere.
+const js = resolve(here, '../..');
+const root = process.env.DEADHOP_WORKSPACE ?? resolve(js, '..');
 const chrome = process.env.CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const TYPES: Record<string, string> = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json' };
 
@@ -33,7 +36,7 @@ describe.skipIf(!existsSync(chrome))('components in a real browser', () => {
   beforeAll(async () => {
     const env = { PATH: process.env.PATH, HOME: process.env.HOME, NODE_ENV: 'production' };
     execFileSync('node', ['build.mjs'], { cwd: app, stdio: 'inherit', env });
-    copyFileSync(resolve(root, 'dashboard/public/config.json'), resolve(app, 'dist/config.json'));
+    copyFileSync(resolve(js, 'dashboard/public/config.json'), resolve(app, 'dist/config.json'));
     server = createServer((req, res) => {
       const path = join(app, 'dist', decodeURIComponent(new URL(req.url!, 'http://x').pathname));
       const file = path.endsWith('/') ? join(path, 'index.html') : path;

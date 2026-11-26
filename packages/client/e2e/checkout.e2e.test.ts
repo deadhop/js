@@ -11,7 +11,10 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createCheckout, createDeadhop, secretKeySigner, type Deadhop, type Invoice } from '../dist/mod.js';
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
+// This repository, and the deadhop workspace around it (the regtest stack,
+// data/dev and the server and lnaddr builds): set DEADHOP_WORKSPACE when it is elsewhere.
+const js = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
+const root = process.env.DEADHOP_WORKSPACE ?? resolve(js, '..');
 const read = (path: string) => readFileSync(resolve(root, path), 'utf8').trim();
 
 function bitcoinCli(...args: string[]): string {
@@ -42,7 +45,7 @@ function until(predicate: () => boolean, ms = 60_000): Promise<void> {
 }
 
 describe('@deadhop/client (built) against a real service', () => {
-  const config = JSON.parse(read('dashboard/public/config.json')) as { serverPubkey: string; relays: string[] };
+  const config = JSON.parse(readFileSync(resolve(js, 'dashboard/public/config.json'), 'utf8')) as { serverPubkey: string; relays: string[] };
   let guest: Deadhop;
   let backend: Deadhop;
 

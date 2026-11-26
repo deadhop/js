@@ -17,8 +17,8 @@ import {
 } from './schemas';
 import { activePool, group, health, i2pLookup, keyInfos, lane, privacyAudit, proxyCheck, proxyPool, relayHistory, relayStats, settings } from '../test-helpers';
 // What the service sends, as its own snapshot tests record it.
-import poolHealth from '../../../../server/tests/snapshots/pool_health.json';
-import fullSettings from '../../../../server/tests/snapshots/get_settings_full.json';
+import poolHealth from '../../../../fixtures/server-snapshots/pool_health.json';
+import fullSettings from '../../../../fixtures/server-snapshots/get_settings_full.json';
 
 const NOW = 1_763_900_000;
 

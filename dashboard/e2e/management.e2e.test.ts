@@ -12,7 +12,10 @@ import { adminTarget, loadConfig } from '../src/lib/config';
 import { localSigner } from '@deadhop/client';
 import type { Config } from '../src/lib/schemas';
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+// This repository, and the deadhop workspace around it (the regtest stack,
+// data/dev and the server and lnaddr builds): set DEADHOP_WORKSPACE when it is elsewhere.
+const js = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+const root = process.env.DEADHOP_WORKSPACE ?? resolve(js, '..');
 const read = (path: string) => readFileSync(resolve(root, path), 'utf8').trim();
 
 /** Retry `f` until it passes; requests sent mid-restart are never answered. */
@@ -36,7 +39,7 @@ describe('operator management over ContextVM', () => {
   let guest: Session;
 
   beforeAll(async () => {
-    config = await loadConfig((async () => ({ ok: true, json: async () => JSON.parse(read('dashboard/public/config.json')) })) as unknown as typeof fetch);
+    config = await loadConfig((async () => ({ ok: true, json: async () => JSON.parse(readFileSync(resolve(js, 'dashboard/public/config.json'), 'utf8')) })) as unknown as typeof fetch);
     operator = await connect(localSigner(read('data/dev/operator.nsec')), adminTarget(config));
     guest = await connect(localSigner(), config);
   });
