@@ -18,9 +18,11 @@ check:
 packages:
     scripts/check-packages.sh
 
-# End-to-end payments on regtest. Needs the deadhop workspace around this
+# End-to-end payments on regtest (the console's tests load the built client, so build it
+# first). Needs the deadhop workspace around this
 # repository (or DEADHOP_WORKSPACE pointing at it) with `just up` and `just server` running there.
 e2e:
+    npm run build --workspace @deadhop/client
     npm run e2e --workspace console
     npm run e2e --workspace dashboard
     npm run e2e --workspace packages/client
