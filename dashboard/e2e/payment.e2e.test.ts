@@ -1,7 +1,7 @@
 // Full payment flow against the local regtest stack, using the same client
 // library the dashboard uses. Requires `just up` and `just server`.
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -14,12 +14,15 @@ import type { Config, Invoice } from '../src/lib/schemas';
 // data/dev and the server and lnaddr builds): set DEADHOP_WORKSPACE when it is elsewhere.
 const js = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const root = process.env.DEADHOP_WORKSPACE ?? resolve(js, '..');
+// The regtest stack's compose file: deadhop/stack, a submodule of the workspace, or the
+// workspace itself when the components were cloned into a deadhop/stack checkout.
+const devStack = [resolve(root, 'stack/dev/docker-compose.yml'), resolve(root, 'dev/docker-compose.yml')].find((f) => existsSync(f)) ?? resolve(root, 'stack/dev/docker-compose.yml');
 const read = (path: string) => readFileSync(resolve(root, path), 'utf8').trim();
 
 function bitcoinCli(...args: string[]): string {
   return execFileSync(
     'docker',
-    ['compose', '-f', resolve(root, 'deploy/docker-compose.yml'), 'exec', '-T', 'bitcoind', 'bitcoin-cli', '-regtest', '-rpcuser=deadhop', '-rpcpassword=deadhop-dev-only', ...args],
+    ['compose', '-f', devStack, 'exec', '-T', 'bitcoind', 'bitcoin-cli', '-regtest', '-rpcuser=deadhop', '-rpcpassword=deadhop-dev-only', ...args],
     { encoding: 'utf8' },
   ).trim();
 }
