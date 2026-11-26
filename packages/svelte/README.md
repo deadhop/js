@@ -2,7 +2,7 @@
 
 `PayButton`, `InvoiceForm` and `Invoice` for Svelte 5 (runes, SvelteKit too) and
 Svelte 4, for taking on-chain bitcoin payments through a
-[deadhop](https://github.com/sandwichfarm/deadhop#readme) service.
+[deadhop](https://github.com/deadhop/server#readme) service.
 
 | Import | For |
 | --- | --- |
@@ -42,11 +42,11 @@ Content-Security-Policy; allow `wss:` in `connect-src`), show the memo as plain 
 and render on the server without touching browser APIs. `styles.css` is optional: it
 uses only `deadhop-` classes and CSS variables you can override.
 
-The client, the other frameworks and the service: [deadhop](https://github.com/sandwichfarm/deadhop#readme).
+The client, the other frameworks and the service: [deadhop](https://github.com/deadhop/server#readme).
 
-Guides: [Svelte 5](https://github.com/sandwichfarm/deadhop/blob/main/site/docs/integrate-svelte5.md),
-[Svelte 4](https://github.com/sandwichfarm/deadhop/blob/main/site/docs/integrate-svelte4.md), and what every integration shares:
-[Integrate payments into your app](https://github.com/sandwichfarm/deadhop/blob/main/site/docs/integrate.md).
+Guides: [Svelte 5](https://deadhop.run/docs/integrate-svelte5.html),
+[Svelte 4](https://deadhop.run/docs/integrate-svelte4.html), and what every integration shares:
+[Integrate payments into your app](https://deadhop.run/docs/integrate.html).
 
 ## License
 
