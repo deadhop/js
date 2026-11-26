@@ -141,6 +141,24 @@ scripts/set-version.sh X.Y.Z   # then commit, push, and push the tag vX.Y.Z
 trusted publishing (no registry tokens in the repository). Versions already on a registry are
 skipped, so a failed run can be retried by hand.
 
+## Agent skills
+
+This repository ships [agent skills](https://deadhop.run/docs/skills.html) for Claude Code,
+Codex, Cursor and other agents that read `SKILL.md`:
+
+```sh
+npx skills add deadhop/js
+```
+
+| Skill | Use it to |
+| --- | --- |
+| `deadhop-js-integrate` | add pay buttons, invoice forms and invoices to an app, and check payments on the back end before fulfilling |
+| `deadhop-js-dashboard` | host the dashboard and the network console, write `config.json`, and sign in as an operator |
+| `deadhop-js-develop` | contribute here: the gates, 100% coverage, the copied fixtures and brand files, end-to-end tests, releases |
+
+Install one with `--skill <name>`. Every deadhop skill is listed on
+[Agent skills](https://deadhop.run/docs/skills.html).
+
 ## Contributing
 
 Issues and pull requests are welcome here. CI runs `just test`, `just check` and
