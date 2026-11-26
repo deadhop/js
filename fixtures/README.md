@@ -5,4 +5,5 @@ Copies of files from https://github.com/deadhop/server. Change them there first,
 - `server-snapshots/` (server `tests/snapshots/`): what the service sends, as its snapshot
   tests record it. `@deadhop/network-ui` parses them with its schemas.
 
-From the deadhop workspace, `just fixtures-check` compares these copies with the server's.
+When you update them, compare each copy with the server's original byte for byte (`cmp`); they
+must stay identical.
