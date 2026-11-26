@@ -2,7 +2,7 @@
 
 `PayButton`, `InvoiceForm`, `Invoice` and the headless `useCheckout` for Solid 1.8 and
 later 1.x (SolidStart too), for taking on-chain bitcoin payments through a
-[deadhop](https://github.com/sandwichfarm/deadhop#readme) service.
+[deadhop](https://github.com/deadhop/server#readme) service.
 
 ```sh
 npm install @deadhop/client @deadhop/solid
@@ -36,10 +36,10 @@ Content-Security-Policy; allow `wss:` in `connect-src`), show the memo as plain 
 and render on the server without touching browser APIs. `styles.css` is optional: it
 uses only `deadhop-` classes and CSS variables you can override.
 
-The client, the other frameworks and the service: [deadhop](https://github.com/sandwichfarm/deadhop#readme).
+The client, the other frameworks and the service: [deadhop](https://github.com/deadhop/server#readme).
 
-Guide: [Solid](https://github.com/sandwichfarm/deadhop/blob/main/site/docs/integrate-solid.md), and what every integration shares:
-[Integrate payments into your app](https://github.com/sandwichfarm/deadhop/blob/main/site/docs/integrate.md).
+Guide: [Solid](https://deadhop.run/docs/integrate-solid.html), and what every integration shares:
+[Integrate payments into your app](https://deadhop.run/docs/integrate.html).
 
 ## License
 

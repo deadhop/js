@@ -1,6 +1,6 @@
 # @deadhop/client
 
-Framework-agnostic client for a [deadhop](https://github.com/sandwichfarm/deadhop#readme) payment service: create
+Framework-agnostic client for a [deadhop](https://github.com/deadhop/server#readme) payment service: create
 on-chain bitcoin invoices over ContextVM (MCP over Nostr), follow them until they are
 paid, and render them. Works in browsers, Node 20+, Deno and Bun.
 
@@ -57,7 +57,7 @@ const deadhop = createDeadhop({ serverPubkey, relays, miner: notemineMiner() });
 Its code (about 500 KB) loads only when the first invoice needs work. A page with a
 Content-Security-Policy must allow `worker-src blob:` and `script-src 'wasm-unsafe-eval'`.
 Where notemine cannot run, the built-in miner takes over. npm only (not on JSR). See
-[Faster proof of work](https://github.com/sandwichfarm/deadhop/blob/main/site/docs/integrate.md#faster-proof-of-work-notemine).
+[Faster proof of work](https://deadhop.run/docs/integrate.html#faster-proof-of-work-notemine).
 
 ## API
 
@@ -82,9 +82,9 @@ invoice are rejected, never shown.
 Components are in [`@deadhop/react`](https://www.npmjs.com/package/@deadhop/react),
 [`@deadhop/solid`](https://www.npmjs.com/package/@deadhop/solid) and
 [`@deadhop/svelte`](https://www.npmjs.com/package/@deadhop/svelte). Full guide:
-[Integrate payments into your app](https://github.com/sandwichfarm/deadhop/blob/main/site/docs/integrate.md), with guides for
-[plain JavaScript](https://github.com/sandwichfarm/deadhop/blob/main/site/docs/integrate-javascript.md) and your
-[backend](https://github.com/sandwichfarm/deadhop/blob/main/site/docs/integrate-backend.md).
+[Integrate payments into your app](https://deadhop.run/docs/integrate.html), with guides for
+[plain JavaScript](https://deadhop.run/docs/integrate-javascript.html) and your
+[backend](https://deadhop.run/docs/integrate-backend.html).
 
 ## License
 
