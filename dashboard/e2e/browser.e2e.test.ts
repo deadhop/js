@@ -14,12 +14,15 @@ const here = dirname(fileURLToPath(import.meta.url));
 // data/dev and the server and lnaddr builds): set DEADHOP_WORKSPACE when it is elsewhere.
 const js = resolve(here, '../..');
 const root = process.env.DEADHOP_WORKSPACE ?? resolve(js, '..');
+// The regtest stack's compose file: deadhop/stack, a submodule of the workspace, or the
+// workspace itself when the components were cloned into a deadhop/stack checkout.
+const devStack = [resolve(root, 'stack/dev/docker-compose.yml'), resolve(root, 'dev/docker-compose.yml')].find((f) => existsSync(f)) ?? resolve(root, 'stack/dev/docker-compose.yml');
 const chrome = process.env.CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 
 function bitcoinCli(...args: string[]): string {
   return execFileSync(
     'docker',
-    ['compose', '-f', resolve(root, 'deploy/docker-compose.yml'), 'exec', '-T', 'bitcoind', 'bitcoin-cli', '-regtest', '-rpcuser=deadhop', '-rpcpassword=deadhop-dev-only', ...args],
+    ['compose', '-f', devStack, 'exec', '-T', 'bitcoind', 'bitcoin-cli', '-regtest', '-rpcuser=deadhop', '-rpcpassword=deadhop-dev-only', ...args],
     { encoding: 'utf8' },
   ).trim();
 }
