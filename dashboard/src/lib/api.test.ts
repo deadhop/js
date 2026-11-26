@@ -235,15 +235,33 @@ describe('connect', () => {
     expect(mocks.close).toHaveBeenCalledTimes(1);
   });
 
-  it('probes the service with a throwaway key and closes the session', async () => {
+  it('probes both keys with a throwaway key and closes the sessions', async () => {
     mocks.callTool.mockResolvedValue(toolResult(info()));
     await probeService(config);
     expect(mocks.callTool).toHaveBeenCalledWith({ name: 'get_info', arguments: {} });
     // Not watched unless asked: a probe is not shown in the status bar.
+    const asked = mocks.transports.map((t) => (t.options as { serverPubkey: string }).serverPubkey);
+    expect(asked).toEqual([config.serverPubkey, config.adminPubkey]);
     expect((mocks.transports[0].options as { relayHandler: string[] }).relayHandler).toEqual(config.relays);
-    expect(mocks.close).toHaveBeenCalledTimes(1);
-    const open = vi.fn().mockRejectedValue(new Error('no answer'));
-    await expect(probeService(config, open)).rejects.toThrow('no answer');
+    expect(mocks.close).toHaveBeenCalledTimes(2);
+  });
+
+  it('counts the service online when either key answers, a refusal included', async () => {
+    const silentPublic = (answer: () => Promise<never> | ReturnType<typeof session>) =>
+      vi.fn((_signer: unknown, target: { serverPubkey: string }) =>
+        target.serverPubkey === config.serverPubkey ? Promise.reject(new ApiError('timeout')) : answer(),
+      );
+    const session = () => Promise.resolve({ close: vi.fn().mockResolvedValue(undefined) });
+    // Only the administration key answers (its own relays, a direct one).
+    await expect(probeService(config, silentPublic(session) as never)).resolves.toBeUndefined();
+    // It refuses a throwaway key: still an answer.
+    await expect(probeService(config, silentPublic(() => Promise.reject(new ApiError('unauthorized'))) as never)).resolves.toBeUndefined();
+  });
+
+  it('counts the service offline only when neither key answers', async () => {
+    await expect(probeService(config, vi.fn().mockRejectedValue(new ApiError('timeout')))).rejects.toMatchObject({ code: 'timeout' });
+    await expect(probeService(config, vi.fn().mockRejectedValue(new ApiError('network')))).rejects.toMatchObject({ code: 'network' });
+    await expect(probeService(config, vi.fn().mockRejectedValue(new Error('no answer')))).rejects.toThrow('no answer');
   });
 
   it('does not mine for operators', async () => {

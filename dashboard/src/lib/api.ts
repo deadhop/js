@@ -67,6 +67,7 @@ export type SettingsPatch = Partial<Omit<Settings, 'sweep' | 'proxies'>> & {
 };
 
 export type { ProxiesPatch, ProxyInput } from '@deadhop/network-ui/lib/network-api';
+import { adminTarget } from './config';
 import type { ProxiesPatch } from '@deadhop/network-ui/lib/network-api';
 
 /** How long an I2P name lookup may take: the service gives registries 90 seconds. */
@@ -216,9 +217,28 @@ export async function connect(
 
 /**
  * Whether the service answers at all, for the sign-in page: one anonymous
- * request with a throwaway key. Reveals nothing but online or not.
+ * request with a throwaway key to each of its keys, the public invoices key
+ * on its relays and the administration key on its own. Either answering is
+ * enough, and a refusal is an answer: the administration key refuses a key
+ * that is not an operator's, which still proves the service is there. Only
+ * silence from both (no reply, no relay) is offline. Reveals nothing but
+ * online or not.
  */
 export async function probeService(config: Config, open: typeof connect = connect): Promise<void> {
-  const session = await open(localSigner(undefined), config);
-  await session.close();
+  const ask = async (target: Config): Promise<void> => {
+    try {
+      const session = await open(localSigner(undefined), target);
+      await session.close();
+    } catch (e) {
+      if (!(e instanceof ApiError) || UNANSWERED.includes(e.code)) throw e;
+    }
+  };
+  try {
+    await Promise.any([ask(config), ask(adminTarget(config))]);
+  } catch (e) {
+    throw (e as AggregateError).errors[0];
+  }
 }
+
+/** Errors that mean nothing answered, as opposed to the service refusing. */
+const UNANSWERED: readonly string[] = ['timeout', 'network', 'bad_response'];
