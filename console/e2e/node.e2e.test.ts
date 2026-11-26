@@ -14,7 +14,10 @@ import { localSigner } from '@deadhop/client';
 import { connect, type Session } from '../src/lib/api';
 
 const RELAY = 'ws://127.0.0.1:7777';
-const root = resolve(import.meta.dirname, '../..');
+// This repository, and the deadhop workspace around it (the regtest stack,
+// data/dev and the server and lnaddr builds): set DEADHOP_WORKSPACE when it is elsewhere.
+const js = resolve(import.meta.dirname, '../..');
+const root = process.env.DEADHOP_WORKSPACE ?? resolve(js, '..');
 const hex = (k: Uint8Array) => Buffer.from(k).toString('hex');
 
 /** Where the node binary is: LNADDR_NODE_BIN, else a build under lnaddr/target. */

@@ -9,8 +9,8 @@
 # failing never stops the other. Both use trusted publishing (OIDC), so the
 # repository holds no registry tokens:
 #   npm: each package → Settings → Trusted publishing → GitHub Actions,
-#        repository sandwichfarm/deadhop, workflow publish.yml
-#   JSR: each package → Settings → link the GitHub repository sandwichfarm/deadhop
+#        repository deadhop/js, workflow publish.yml
+#   JSR: each package → Settings → link the GitHub repository deadhop/js
 name: publish
 
 on:

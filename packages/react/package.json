@@ -5,11 +5,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/sandwichfarm/deadhop.git",
+    "url": "git+https://github.com/deadhop/js.git",
     "directory": "packages/react"
   },
-  "homepage": "https://github.com/sandwichfarm/deadhop/tree/main/packages/react#readme",
-  "bugs": "https://github.com/sandwichfarm/deadhop/issues",
+  "homepage": "https://github.com/deadhop/js/tree/main/packages/react#readme",
+  "bugs": "https://github.com/deadhop/js/issues",
   "type": "module",
   "sideEffects": [
     "**/*.css"

@@ -11,7 +11,10 @@ import { preview, type PreviewServer } from 'vite';
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const consoleDir = resolve(here, '..');
-const root = resolve(consoleDir, '..');
+// This repository, and the deadhop workspace around it (the regtest stack,
+// data/dev and the server and lnaddr builds): set DEADHOP_WORKSPACE when it is elsewhere.
+const js = resolve(consoleDir, '..');
+const root = process.env.DEADHOP_WORKSPACE ?? resolve(js, '..');
 
 export interface Stack {
   /** Where the console is served. */

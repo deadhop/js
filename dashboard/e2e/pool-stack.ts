@@ -11,7 +11,10 @@ import { preview, type PreviewServer } from 'vite';
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const dashboardDir = resolve(here, '..');
-const root = resolve(dashboardDir, '..');
+// This repository, and the deadhop workspace around it (the regtest stack,
+// data/dev and the server and lnaddr builds): set DEADHOP_WORKSPACE when it is elsewhere.
+const js = resolve(dashboardDir, '..');
+const root = process.env.DEADHOP_WORKSPACE ?? resolve(js, '..');
 
 /** A SOCKS5 proxy with no login: enough for the service's relay connections. */
 export class Socks5 {

@@ -1,0 +1,19 @@
+# Local settings and secrets. Never commit.
+.env
+.env.*
+!.env.example
+*.local
+*.local.*
+*.key
+*.nsec
+
+# Build output
+node_modules/
+dist/
+coverage/
+*.tgz
+.svelte-kit/
+.DS_Store
+
+# Dashboard deployment config (contains this deployment's server key and relays)
+dashboard/public/config.json

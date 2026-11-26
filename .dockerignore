@@ -1,0 +1,11 @@
+# Build context for the dashboard image is this repository's root. Keep secrets,
+# local state and build output out of it.
+.env
+.env.*
+*.local
+*.local.*
+**/node_modules
+**/dist
+**/coverage
+dashboard/public/config.json
+.git
