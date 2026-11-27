@@ -19,7 +19,9 @@
     "uqr": "^0.1.3",
     "zod": "^4.5.4",
     "@deadhop/client": "0.1.0",
-    "@deadhop/network-ui": "0.1.0"
+    "@deadhop/network-ui": "0.1.0",
+    "@scure/base": "^2.0.0",
+    "@scure/bip32": "^2.0.1"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.1",

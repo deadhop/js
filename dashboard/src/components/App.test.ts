@@ -2,8 +2,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import App from './App.svelte';
 import { ApiError, type PayApi, type Session } from '../lib/api';
-import { nip19 } from 'nostr-tools';
-import { ADMIN_PUBKEY, PUBKEY, relayHistory, health, info, invoice, metrics, series, settings, settingsView, stats, privacyAudit } from '../test-helpers';
+import { getPublicKey, nip19 } from 'nostr-tools';
+import { hexToBytes } from '@noble/hashes/utils.js';
+import { ADMIN_PUBKEY, PUBKEY, STATUS, relayHistory, health, info, invoice, metrics, series, settings, settingsView, stats, privacyAudit } from '../test-helpers';
 
 const config = { serverPubkey: PUBKEY, adminPubkey: ADMIN_PUBKEY, relays: ['ws://127.0.0.1:7777'] };
 
@@ -225,5 +226,41 @@ describe('App', () => {
     render(App, { props: { probe: vi.fn().mockResolvedValue(undefined) } as never });
     await fireEvent.click(await screen.findByRole('button', { name: 'Use browser extension' }));
     await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('No Nostr extension'));
+  });
+
+  it('shows the setup instead of the sign-in while the service waits for its settings', async () => {
+    const loadSetup = vi.fn().mockResolvedValue(STATUS);
+    render(App, { props: { loadConfig: vi.fn().mockResolvedValue(config), connect: vi.fn(), probe: vi.fn().mockRejectedValue(new Error('x')), loadSetup } as never });
+    expect(await screen.findByRole('heading', { name: 'This deadhop is waiting for its settings.' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Continue as guest' })).toBeNull();
+    // The relays the dashboard was given start the list.
+    vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined);
+    for (let i = 0; i < 4; i++) await fireEvent.click(screen.getByRole('button', { name: /^(Start setup|Continue)$/ }));
+    expect(screen.getByText('ws://127.0.0.1:7777')).toBeTruthy();
+  });
+
+  it('shows the setup even when config.json cannot be read', async () => {
+    render(App, { props: { loadConfig: vi.fn().mockRejectedValue(new Error('bad')), connect: vi.fn(), loadSetup: vi.fn().mockResolvedValue(STATUS) } as never });
+    expect(await screen.findByRole('heading', { name: 'This deadhop is waiting for its settings.' })).toBeTruthy();
+  });
+
+  it('signs an operator in with a passkey', async () => {
+    const secret = '11'.repeat(32);
+    const passkey = { support: vi.fn().mockResolvedValue('yes'), usePasskey: vi.fn().mockResolvedValue({ secret, pubkey: PUBKEY, id: new Uint8Array() }), createPasskey: vi.fn() };
+    const connect = vi.fn().mockResolvedValue(session({ is_admin: true }));
+    render(App, { props: { loadConfig: vi.fn().mockResolvedValue(config), connect, probe: vi.fn().mockResolvedValue(undefined), loadSetup: vi.fn().mockResolvedValue(null), passkey } as never });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Sign in with passkey' }));
+    await waitFor(() => expect(connect).toHaveBeenCalledTimes(1));
+    expect(passkey.usePasskey).toHaveBeenCalledWith();
+    // Through the administration key, with the passkey's key.
+    expect(connect.mock.calls[0][1].serverPubkey).toBe(ADMIN_PUBKEY);
+    expect(await connect.mock.calls[0][0].getPublicKey()).toBe(getPublicKey(hexToBytes(secret)));
+  });
+
+  it('reports a passkey that cannot sign in', async () => {
+    const passkey = { support: vi.fn().mockResolvedValue('maybe'), usePasskey: vi.fn().mockRejectedValue(new Error('No passkey was chosen.')), createPasskey: vi.fn() };
+    render(App, { props: { loadConfig: vi.fn().mockResolvedValue(config), connect: vi.fn(), probe: vi.fn().mockResolvedValue(undefined), loadSetup: vi.fn().mockResolvedValue(null), passkey } as never });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Sign in with passkey' }));
+    expect((await screen.findByRole('alert')).textContent).toBe('No passkey was chosen.');
   });
 });

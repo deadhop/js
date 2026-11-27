@@ -41,4 +41,15 @@ describe('Login', () => {
     render(Login, { props: { onSignIn: vi.fn(), status: 'offline' } });
     expect(screen.getByText('Service not reachable').className).toBe('service-status offline');
   });
+
+  it('offers passkey sign-in first where the browser supports it', async () => {
+    const onSignIn = vi.fn();
+    render(Login, { props: { onSignIn, passkey: true } });
+    const buttons = screen.getAllByRole('button').map((b) => b.textContent);
+    expect(buttons.slice(0, 2)).toEqual(['Sign in with passkey', 'Use browser extension']);
+    await fireEvent.click(screen.getByRole('button', { name: 'Sign in with passkey' }));
+    expect(onSignIn).toHaveBeenLastCalledWith('passkey');
+    await fireEvent.click(screen.getByRole('button', { name: 'Use browser extension' }));
+    expect(onSignIn).toHaveBeenLastCalledWith('extension');
+  });
 });

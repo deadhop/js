@@ -1,4 +1,7 @@
 // Fixtures shared by the unit tests.
+import { createBase58check } from '@scure/base';
+import { sha256 } from '@noble/hashes/sha2.js';
+import type { SetupStatus } from './lib/setup';
 import type { InvoiceKeyInfo, InvoiceKeyList, KeyTotals } from './lib/schemas';
 import type { AdminInvoice, I2pLookup, AuditLog, Health, Info, KeyInfo, Invoice, Metrics, PrivacyAudit, ProxyCheck, ProxyPool, RelayHistory, RelayStats, Series, Settings, SettingsView, Stats } from './lib/schemas';
 
@@ -272,3 +275,29 @@ export function keyInfosWithShop(relays: string[] = ['ws://127.0.0.1:7777']): Ke
   const [invoices, admin] = keyInfos(relays);
   return [invoices, { id: 'shop', label: 'Shop', pubkey: SHOP_PUBKEY, tools: ['get_info', 'create_invoice', 'get_invoice'], operators_only: false, relays }, admin];
 }
+
+// ---- Setup mode ----
+
+// BIP-84's test vector: its first receive address is known.
+export const ZPUB = 'zpub6rFR7y4Q2AijBEqTUquhVz398htDFrtymD9xYYfG1m4wAcvPhXNfE3EfH1r1ADqtfSdVCToUG868RvUUkgDKf31mGDtKsAYz2oz2AGutZYs';
+export const XPUB = 'xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8';
+export const TPUB = 'tpubD6NzVbkrYhZ4XgiXtGrdW5XDAPFCL9h7we1vwNCpn8tGbBcgfVYjXyhWo4E1xkh56hjod1RhGjxbaTLV3X4FyWuejifB9jusQ46QzG87VKp';
+export const b58 = createBase58check(sha256);
+export const withVersion = (key: string, version: number) => {
+  const raw = b58.decode(key);
+  new DataView(raw.buffer, raw.byteOffset).setUint32(0, version);
+  return b58.encode(raw);
+};
+
+export const STATUS: SetupStatus = {
+  version: 1,
+  network: 'bitcoin',
+  settings: [
+    { name: 'DEADHOP_ELECTRUM', state: 'missing', about: 'where to watch the chain' },
+    { name: 'DEADHOP_ADMINS', state: 'missing', about: 'who may operate it' },
+    { name: 'DEADHOP_XPUB', state: 'found', about: 'the account key payments go to' },
+    { name: 'DEADHOP_RELAYS', state: 'found', about: 'the relays it is reached through' },
+    { name: 'DEADHOP_NETWORK', state: 'default', about: 'the bitcoin network' },
+  ],
+};
+
