@@ -1,5 +1,5 @@
 <script lang="ts">
-  export type SignInKind = 'extension' | 'secret' | 'guest';
+  export type SignInKind = 'extension' | 'secret' | 'guest' | 'passkey';
   export type ServiceStatus = 'checking' | 'online' | 'offline';
   import Loading from '@deadhop/network-ui/components/Loading.svelte';
 
@@ -8,7 +8,8 @@
     busy = false,
     error = '',
     status = 'checking',
-  }: { onSignIn: (kind: SignInKind, secret?: string) => void; busy?: boolean; error?: string; status?: ServiceStatus } = $props();
+    passkey = false,
+  }: { onSignIn: (kind: SignInKind, secret?: string) => void; busy?: boolean; error?: string; status?: ServiceStatus; passkey?: boolean } = $props();
 
   const STATUS: Record<ServiceStatus, string> = {
     checking: 'Checking the service…',
@@ -42,7 +43,12 @@
   <h1 id="login-title">deadhop</h1>
   <p class={`service-status ${status}`} aria-live="polite"><span class="dot" aria-hidden="true"></span>{STATUS[status]}</p>
 
-  <button class="primary wide" disabled={busy} onclick={() => onSignIn('extension')}>Use browser extension</button>
+  {#if passkey}
+    <button class="primary wide" disabled={busy} onclick={() => onSignIn('passkey')}>Sign in with passkey</button>
+    <button class="wide" disabled={busy} onclick={() => onSignIn('extension')}>Use browser extension</button>
+  {:else}
+    <button class="primary wide" disabled={busy} onclick={() => onSignIn('extension')}>Use browser extension</button>
+  {/if}
 
   <p class="or" aria-hidden="true"><span>or</span></p>
 

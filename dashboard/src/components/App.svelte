@@ -15,6 +15,9 @@
   import StatusBar from './StatusBar.svelte';
   import { activity } from '@deadhop/network-ui/lib/activity.svelte';
   import ServiceKey from './ServiceKey.svelte';
+  import Setup from './Setup.svelte';
+  import { loadSetup as defaultLoadSetup, type SetupStatus } from '../lib/setup';
+  import * as passkeys from '../lib/passkey';
 
   let {
     loadConfig = defaultLoadConfig,
@@ -22,14 +25,21 @@
     connect = (signer, config) => defaultConnect(signer, config, {}, CONNECT_TIMEOUT_MS, activity),
     extension = () => (window as unknown as { nostr?: Nip07 }).nostr,
     probe = probeService,
+    loadSetup = defaultLoadSetup,
+    passkey = passkeys,
   }: {
     loadConfig?: () => Promise<Config>;
+    loadSetup?: () => Promise<SetupStatus | null>;
+    passkey?: Pick<typeof passkeys, 'support' | 'usePasskey' | 'createPasskey'>;
     connect?: (signer: NostrSigner, config: Config) => Promise<Session>;
     extension?: () => Nip07 | undefined;
     probe?: (config: Config) => Promise<void>;
   } = $props();
 
   let serviceStatus = $state<ServiceStatus>('checking');
+  // Set while the service waits for its settings (it has never been set up).
+  let setup = $state<SetupStatus | null>(null);
+  let passkeySignIn = $state(false);
 
   let config = $state<Config | null>(null);
   let fatal = $state('');
@@ -42,7 +52,8 @@
     busy = true;
     error = '';
     try {
-      const signer = kind === 'extension' ? nip07Signer(extension()) : localSigner(kind === 'secret' ? secret : undefined);
+      if (kind === 'passkey') secret = (await passkey.usePasskey()).secret;
+      const signer = kind === 'extension' ? nip07Signer(extension()) : localSigner(kind === 'guest' ? undefined : secret);
       // Operators sign in through the administration key (and its relays); a payment
       // link is for the public, who use the invoices key.
       const target = kind === 'guest' ? config! : adminTarget(config!);
@@ -85,6 +96,8 @@
   $effect(() => {
     const onHash = () => (route = parseRoute(location.hash));
     window.addEventListener('hashchange', onHash);
+    void loadSetup().then((s) => (setup = s));
+    void passkey.support().then((s) => (passkeySignIn = s !== 'no'));
     loadConfig().then(
       (c) => {
         config = c;
@@ -104,6 +117,10 @@
   });
 </script>
 
+{#if setup !== null && (config !== null || fatal !== '') && session === null && route.name !== 'pay'}
+  <!-- The service waits for its settings: walk the operator through them. -->
+  <Setup status={setup} defaultRelays={config?.relays ?? []} {extension} {passkey} />
+{:else}
 <!-- The sign-in page has no header: just the form. -->
 {#if session !== null || route.name === 'pay'}
 <header class={operator ? 'site joined' : 'site'}>
@@ -152,7 +169,7 @@
     {#if route.name === 'pay' && error === ''}
       <Loading label="Opening the invoice" />
     {:else}
-      <Login onSignIn={signIn} {busy} {error} status={serviceStatus} />
+      <Login onSignIn={signIn} {busy} {error} status={serviceStatus} passkey={passkeySignIn} />
     {/if}
   {:else if route.name === 'pay'}
     <Checkout api={session.api} id={route.id} />
@@ -172,6 +189,8 @@
   <footer class="muted">
     <ServiceKey pubkey={config.serverPubkey} compact />
   </footer>
+{/if}
+
 {/if}
 
 <!-- On every page: what the dashboard is doing and waiting for. -->
