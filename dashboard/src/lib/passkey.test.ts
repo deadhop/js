@@ -62,8 +62,8 @@ describe('passkey keys', () => {
 });
 
 describe('passkey support', () => {
-  const win = (pkc: unknown, secure = true, credentials: unknown = {}) =>
-    ({ PublicKeyCredential: pkc, isSecureContext: secure, navigator: { credentials } }) as unknown as Window;
+  const win = (pkc: unknown, secure = true, credentials: unknown = {}, hostname = 'pay.example.com') =>
+    ({ PublicKeyCredential: pkc, isSecureContext: secure, navigator: { credentials }, location: { hostname } }) as unknown as Window;
 
   it('follows what the browser says', async () => {
     const caps = (c: unknown) => ({ getClientCapabilities: async () => c });
@@ -78,6 +78,10 @@ describe('passkey support', () => {
     expect(await support(win(undefined))).toBe('no');
     expect(await support(win({}, false))).toBe('no');
     expect(await support(win({}, true, null))).toBe('no');
+    // No passkey can belong to an IP address, even a secure one.
+    expect(await support(win({}, true, {}, '127.0.0.1'))).toBe('no');
+    expect(await support(win({}, true, {}, '[::1]'))).toBe('no');
+    expect(await support(win({}, true, {}, 'localhost'))).toBe('maybe');
     // jsdom has no WebAuthn at all.
     expect(await support()).toBe('no');
   });

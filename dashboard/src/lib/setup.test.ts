@@ -195,6 +195,15 @@ describe('formats', () => {
     );
   });
 
+  it('keep $ and % literal where the target would expand them', () => {
+    const odd: [string, string][] = [['DEADHOP_NAME', '50% off $5']];
+    expect(render(odd, 'env')).toContain('DEADHOP_NAME="50% off $$5"');
+    expect(render(odd, 'compose')).toContain('DEADHOP_NAME: "50% off $$5"');
+    expect(render(odd, 'systemd')).toContain('Environment="DEADHOP_NAME=50%% off $5"');
+    expect(render(odd, 'shell')).toContain("export DEADHOP_NAME='50% off $5'");
+    expect(render(odd, 'kubernetes')).toContain('DEADHOP_NAME: "50% off $5"');
+  });
+
   it('name a file for each', () => {
     expect(FORMATS.map(fileName)).toEqual(['.env', 'deadhop.env', 'compose.override.yaml', 'deadhop.conf', 'deadhop.sh', 'deadhop-settings.yaml']);
   });

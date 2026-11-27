@@ -32,6 +32,8 @@ interface PkcStatic {
 export async function support(win: Window = window): Promise<Support> {
   const pkc = (win as unknown as { PublicKeyCredential?: PkcStatic }).PublicKeyCredential;
   if (!pkc || !win.isSecureContext || !win.navigator.credentials) return 'no';
+  // A passkey belongs to a domain name: none can be made on an IP address.
+  if (/^[\d.]+$|:/.test(win.location.hostname)) return 'no';
   if (!pkc.getClientCapabilities) return 'maybe';
   try {
     const caps = await pkc.getClientCapabilities();

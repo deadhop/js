@@ -208,19 +208,21 @@ export const FORMAT_HINTS: Record<Format, string> = {
 // A value that needs no quoting in a .env file or a shell.
 const plain = (v: string) => /^[A-Za-z0-9_./:,@+=-]*$/.test(v);
 const dq = (v: string) => `"${v.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+// Compose expands $ in .env values and in compose files; $$ is a literal $.
+const dollars = (v: string) => v.replace(/\$/g, '$$$$');
 const sq = (v: string) => `'${v.replace(/'/g, `'\\''`)}'`;
 
 /** The settings written for `format`. */
 export function render(pairs: [string, string][], format: Format): string {
   switch (format) {
     case 'env':
-      return ['# deadhop settings, made by the setup page', ...pairs.map(([k, v]) => `${k}=${plain(v) ? v : dq(v)}`)].join('\n') + '\n';
+      return ['# deadhop settings, made by the setup page', ...pairs.map(([k, v]) => `${k}=${plain(v) ? v : dq(dollars(v))}`)].join('\n') + '\n';
     case 'coolify':
       return pairs.map(([k, v]) => `${k}=${v}`).join('\n') + '\n';
     case 'compose':
-      return ['services:', '  deadhop:', '    environment:', ...pairs.map(([k, v]) => `      ${k}: ${JSON.stringify(v)}`)].join('\n') + '\n';
+      return ['services:', '  deadhop:', '    environment:', ...pairs.map(([k, v]) => `      ${k}: ${JSON.stringify(dollars(v))}`)].join('\n') + '\n';
     case 'systemd':
-      return ['[Service]', ...pairs.map(([k, v]) => `Environment=${dq(`${k}=${v}`)}`)].join('\n') + '\n';
+      return ['[Service]', ...pairs.map(([k, v]) => `Environment=${dq(`${k}=${v.replace(/%/g, '%%')}`)}`)].join('\n') + '\n';
     case 'shell':
       return pairs.map(([k, v]) => `export ${k}=${plain(v) ? v : sq(v)}`).join('\n') + '\n';
     case 'kubernetes':
