@@ -1,0 +1,8 @@
+2026-11-27T14:21:12.838423Z  WARN deadhop::setup: deadhop is not set up yet: waiting for its settings (setup mode) network=regtest
+2026-11-27T14:21:12.838533Z  WARN deadhop::setup:   missing  DEADHOP_ELECTRUM  where to watch the chain
+2026-11-27T14:21:12.838589Z  WARN deadhop::setup:   missing  DEADHOP_ADMINS  who may operate it (or DEADHOP_PUBLIC_INVOICING=true)
+2026-11-27T14:21:12.838602Z  INFO deadhop::setup:   found    DEADHOP_XPUB  the account key payments go to
+2026-11-27T14:21:12.838612Z  INFO deadhop::setup:   found    DEADHOP_RELAYS  the relays it is reached through
+2026-11-27T14:21:12.838621Z  INFO deadhop::setup:   found    DEADHOP_NETWORK  the bitcoin network
+2026-11-27T14:21:12.838631Z  INFO deadhop::setup: open the dashboard to answer a few questions and get the settings to paste, then restart the service
+2026-11-27T14:21:12.838640Z  INFO deadhop::setup: nothing is connected: no relay, no Electrum, no invoices
