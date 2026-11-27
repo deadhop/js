@@ -3,7 +3,7 @@ import { PrivateKeySigner } from '@contextvm/sdk';
 import { ApiError, LOOKUP_TIMEOUT_MS, PayApi, connect, probeService, toApiError, withTimeout } from './api';
 import { activity } from '@deadhop/network-ui/lib/activity.svelte';
 import { CTXVM_KIND, PowError } from '@deadhop/client';
-import { ADMIN_PUBKEY, PUBKEY, adminInvoice, audit, health, i2pLookup, relayHistory, info, invoice, metrics, privacyAudit, proxyCheck, series, settingsView, stats, toolResult } from '../test-helpers';
+import { ADMIN_PUBKEY, PUBKEY, adminInvoice, invoiceKey, invoiceKeyList, shopKey, audit, health, i2pLookup, relayHistory, info, invoice, metrics, privacyAudit, proxyCheck, series, settingsView, stats, toolResult } from '../test-helpers';
 
 const mocks = vi.hoisted(() => ({
   transports: [] as Array<{ options: Record<string, unknown> }>,
@@ -147,6 +147,56 @@ describe('PayApi', () => {
       ['list_invoices', {}],
       ['get_stats', {}],
     ]);
+  });
+
+  it('calls the invoice-key tools and books an invoice to a key', async () => {
+    const list = invoiceKeyList([invoiceKey(), shopKey({ archived_at: 1_700_000_000 })]);
+    const caller = vi.fn(async (name: string) => {
+      const results: Record<string, unknown> = {
+        list_invoice_keys: list,
+        add_invoice_key: list,
+        update_invoice_key: list,
+        archive_invoice_key: list,
+        restore_invoice_key: list,
+        create_invoice: invoice(),
+        list_invoices: { invoices: [adminInvoice({ key: 'shop' })], next_before: null },
+        get_payment_series: series(),
+      };
+      return toolResult(results[name]);
+    });
+    const api = new PayApi(caller);
+    expect(await api.listInvoiceKeys()).toEqual(list);
+    await api.listInvoiceKeys(1_700_000_000);
+    await api.addInvoiceKey({ id: 'shop', label: 'Shop', copy_from: '' });
+    await api.updateInvoiceKey('shop', { label: 'Shop 2', announce: true });
+    await api.archiveInvoiceKey('shop');
+    await api.restoreInvoiceKey('shop');
+    await api.restoreInvoiceKey('shop', 'invoices');
+    await api.createInvoice({ amount_sat: 50_000, key: 'shop' });
+    expect((await api.listInvoices({ key: 'shop', with_key: true })).invoices[0].key).toBe('shop');
+    await api.getSeries('week', 'shop');
+    expect(caller.mock.calls).toEqual([
+      ['list_invoice_keys', {}],
+      ['list_invoice_keys', { since: 1_700_000_000 }],
+      ['add_invoice_key', { id: 'shop', label: 'Shop', copy_from: '' }],
+      ['update_invoice_key', { label: 'Shop 2', announce: true, id: 'shop' }],
+      ['archive_invoice_key', { id: 'shop' }],
+      ['restore_invoice_key', { id: 'shop' }],
+      ['restore_invoice_key', { id: 'shop', copy_from: 'invoices' }],
+      ['create_invoice', { amount_sat: 50_000, key: 'shop' }],
+      ['list_invoices', { key: 'shop', with_key: true }],
+      ['get_payment_series', { range: 'week', key: 'shop' }],
+    ]);
+  });
+
+  it('rejects an invoice-key list with unexpected fields', async () => {
+    const leaky = new PayApi(async () => toolResult(invoiceKeyList([{ ...invoiceKey(), secret: 'x' } as never])));
+    await expect(leaky.listInvoiceKeys()).rejects.toMatchObject({ code: 'bad_response' });
+    const badKey = new PayApi(async () => toolResult(invoiceKeyList([invoiceKey({ pubkey: 'nope' })])));
+    await expect(badKey.listInvoiceKeys()).rejects.toMatchObject({ code: 'bad_response' });
+    // A key the service has not loaded yet has an empty public key.
+    const unloaded = new PayApi(async () => toolResult(invoiceKeyList([invoiceKey({ pubkey: '' })])));
+    expect((await unloaded.listInvoiceKeys()).keys[0].pubkey).toBe('');
   });
 
   it('rejects responses that do not match the schema', async () => {

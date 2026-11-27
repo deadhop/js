@@ -50,8 +50,18 @@ export const ConfigSchema = z.strictObject({
   adminRelays: relayList.optional(),
 });
 
-export const AdminInvoiceSchema = invoiceWith({ index: z.number().int().min(0), creator: hexKey });
-export type AdminInvoice = z.infer<typeof AdminInvoiceSchema>;
+/** An invoice with what only operators see. */
+export type AdminInvoice = Invoice & {
+  index: number;
+  creator: string;
+  /** The invoice key it came in on; only when asked for (`with_key`). */
+  key?: string;
+};
+export const AdminInvoiceSchema = invoiceWith({
+  index: z.number().int().min(0),
+  creator: hexKey,
+  key: z.string().min(1).max(40).optional(),
+}) as unknown as z.ZodType<AdminInvoice>;
 
 export const InvoiceListSchema = z.strictObject({
   invoices: z.array(AdminInvoiceSchema).max(200),
@@ -262,3 +272,47 @@ export const AuditLogSchema = z.strictObject({
     .max(200),
 });
 export type AuditLog = z.infer<typeof AuditLogSchema>;
+
+// ---- Invoice keys -----------------------------------------------------------
+
+/** One key's invoices: counts by status and the sums paid. */
+export const KeyTotalsSchema = z.strictObject({
+  key: z.string().max(40),
+  pending: count,
+  detected: count,
+  confirmed: count,
+  expired: count,
+  confirmed_sat: sats,
+  detected_sat: sats,
+  last_paid_at: unixTime.nullable(),
+});
+export type KeyTotals = z.infer<typeof KeyTotalsSchema>;
+
+/** An invoice key: the original one (`invoices`) or one an operator added. */
+export const InvoiceKeyInfoSchema = z.strictObject({
+  id: z.string().min(1).max(40),
+  label: text(60),
+  description: text(200),
+  color: z.number().int().min(0).max(255),
+  name: text(100),
+  public_invoicing: z.boolean(),
+  announce: z.boolean(),
+  created_at: unixTime,
+  created_by: z.union([hexKey, z.literal('')]),
+  archived_at: unixTime.nullable(),
+  /** Hex; empty until the service has loaded it. */
+  pubkey: z.union([hexKey, z.literal('')]),
+  original: z.boolean(),
+  relays: z.array(z.string().max(200)).max(8),
+  totals: KeyTotalsSchema,
+});
+export type InvoiceKeyInfo = z.infer<typeof InvoiceKeyInfoSchema>;
+
+export const InvoiceKeyListSchema = z.strictObject({
+  keys: z.array(InvoiceKeyInfoSchema).max(64),
+  /** Invoice keys that can be in use at once, the original one included. */
+  max_keys: count,
+  /** The start of the period the totals cover. */
+  since: unixTime,
+});
+export type InvoiceKeyList = z.infer<typeof InvoiceKeyListSchema>;

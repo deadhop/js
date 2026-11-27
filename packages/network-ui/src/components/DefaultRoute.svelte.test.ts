@@ -4,18 +4,19 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import DefaultRoute from './DefaultRoute.svelte';
 import type { ProxySettings } from '../lib/schemas';
-import { group, keyInfos, settings } from '../test-helpers';
+import { fourKeys, group, keyInfos, settings } from '../test-helpers';
+import type { KeyInfo } from '../lib/schemas';
 
 const LIST = [
   { id: 'tor', name: 'Tor', url: 'socks5://tor:1' },
   { id: 'vpn', name: 'VPN', url: 'socks5://vpn:1' },
 ];
 
-function setup(over: Partial<ProxySettings> = {}) {
+function setup(over: Partial<ProxySettings> = {}, keys: KeyInfo[] = keyInfos()) {
   const proxies: ProxySettings = $state({ ...settings().proxies, list: LIST, groups: [group('exits', ['tor', 'vpn'], { name: 'Exits', strategy: 'chaos' })], ...over });
   const ondone = vi.fn();
   const onproxies = vi.fn();
-  render(DefaultRoute, { props: { keys: keyInfos(), proxies, ondone, onproxies } });
+  render(DefaultRoute, { props: { keys, proxies, ondone, onproxies } });
   return { proxies, ondone, onproxies };
 }
 
@@ -59,5 +60,36 @@ describe('DefaultRoute', () => {
     expect(screen.getByText('Blocked for Administration: only the relays a rule sends somewhere connect.')).toBeTruthy();
     await fireEvent.click(screen.getAllByLabelText('A different default route for this key')[1]);
     expect(t.proxies.default_keys).toEqual({});
+  });
+});
+
+describe('DefaultRoute with three keys or more', () => {
+  const same = () => screen.queryByRole('group', { name: 'Keys that follow the service default' });
+
+  it('puts the keys without a route of their own on one line, and sets one apart', async () => {
+    const t = setup({ default: { proxy: 'tor' }, default_keys: { oven: 'direct' } }, fourKeys());
+    expect([...same()!.querySelectorAll('.key-tag')].map((t) => t.textContent)).toEqual(['Administration', 'Storefront', 'Catering orders']);
+    expect(within(same()!).getByText('follow the service default (tor).')).toBeTruthy();
+    expect(within(same()!).getAllByRole('button').map((b) => b.textContent)).toEqual(['Set Administration separately', 'Set Storefront separately', 'Set Catering orders separately']);
+    expect(screen.getAllByRole('group').map((g) => g.querySelector('legend')?.textContent ?? '')).toEqual(['For every key', '', 'For the Oven fund key']);
+    await fireEvent.click(screen.getByRole('button', { name: 'Set Catering orders separately' }));
+    expect(t.proxies.default_keys).toEqual({ oven: 'direct', catering: { proxy: 'tor' } });
+    expect(screen.getByRole('radiogroup', { name: 'Everything else goes, for Catering orders' })).toBeTruthy();
+  });
+
+  it('starts at three keys', () => {
+    const [store, catering, , admin] = fourKeys();
+    setup({}, [store, catering, admin]);
+    expect([...same()!.querySelectorAll('.key-tag')].map((t) => t.textContent)).toEqual(['Administration', 'Storefront', 'Catering orders']);
+    expect(screen.queryByLabelText('A different default route for this key')).toBeNull();
+  });
+
+  it('says it once for a single key, and drops the line when every key has its own', async () => {
+    const t = setup({ default_keys: { oven: 'direct', admin: 'direct', catering: 'direct' } }, fourKeys());
+    expect(same()!.textContent).toContain('Storefront follows the service default (direct, no proxy).');
+    expect(screen.getByRole('button', { name: 'Set Storefront separately' }).textContent).toBe('Set separately');
+    await fireEvent.click(screen.getByRole('button', { name: 'Set Storefront separately' }));
+    expect(same()).toBeNull();
+    expect(Object.keys(t.proxies.default_keys)).toHaveLength(4);
   });
 });

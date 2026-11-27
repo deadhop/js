@@ -1,9 +1,10 @@
 <script lang="ts">
   import { GROUP_MIN, MAX_GROUPS, STRATEGIES, groupId, isNew, move, newGroup, shortDuration } from '../lib/proxy';
-  import { groupName, proxyName, usedBy } from '../lib/routes';
+  import { groupName, keysUsing, proxyName, usedBy } from '../lib/routes';
   import { groupSummaries, keyLabel } from '../lib/routeview';
   import type { KeyInfo, ProxyGroup, ProxyPool, ProxySettings } from '../lib/schemas';
   import Duration from './Duration.svelte';
+  import KeyUse from './KeyUse.svelte';
 
   // Proxy groups: two or more proxies, in order, and the strategy that picks
   // one of them. A rule or the default route uses a group by pointing at it.
@@ -66,6 +67,7 @@
         <span class="proxy-id">
           <span class="proxy-name">{label}{#if isNew(g, live.groups)}<span class="badge not_checked">not saved</span>{/if}</span>
           <span class="hint">{used.length === 0 ? 'Nothing points at it yet.' : `Used by ${used.join(', ')}.`}</span>
+          <KeyUse {keys} used={keysUsing(proxies, { group: g.id }, keys)} label={`Group ${label}`} />
         </span>
         <div class="group-body">
           <div class="field">

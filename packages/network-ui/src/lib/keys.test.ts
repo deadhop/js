@@ -1,6 +1,9 @@
-import { describe, expect, it } from 'vitest';
-import { ADMIN, assignmentProblem, dependents, keyTag, relayKeysFor, relayKeysText, relayUsers, relaysOf, replacements, toggled, usersOf } from './keys';
-import { keyInfos, settings } from '../test-helpers';
+import { describe, expect, it, vi } from 'vitest';
+import { setContext } from 'svelte';
+import { ADMIN, KEY_COLORS, setKeyColors, assignmentProblem, dependents, displayOrder, invoiceKeys, keyColor, keyColorClass, labelList, relayKeysFor, relayKeysText, relayUsers, relaysOf, replacements, sameFor, toggled, usersOf } from './keys';
+import { fourKeys, keyInfos, settings } from '../test-helpers';
+
+vi.mock('svelte', async (original) => ({ ...(await original<typeof import('svelte')>()), setContext: vi.fn() }));
 
 const ids = ['invoices', 'admin'];
 
@@ -44,10 +47,47 @@ describe('who uses what', () => {
     expect(assignmentProblem(keys, noRelay)).toContain('No relay is assigned to Administration');
   });
 
-  it('shortens key ids for badges', () => {
-    expect(keyTag('invoices')).toBe('Invoices');
-    expect(keyTag('admin')).toBe('Admin');
-    expect(keyTag('reports')).toBe('reports');
+});
+
+describe('several keys', () => {
+  const keys = fourKeys();
+
+  it('puts the administration key first for display, and tells the invoice keys apart', () => {
+    expect(displayOrder(keys).map((k) => k.id)).toEqual(['admin', 'invoices', 'catering', 'oven']);
+    expect(invoiceKeys(keys).map((k) => k.id)).toEqual(['invoices', 'catering', 'oven']);
+  });
+
+  it('colours an invoice key by its place, or by the stored colour, and the administration key graphite', () => {
+    expect(keys.map((k) => keyColor(keys, k.id))).toEqual([0, 1, 2, null]);
+    expect(keyColor(keys, 'oven', { oven: 5, catering: 9 })).toBe(5);
+    expect(keyColor(keys, 'catering', { catering: 9 })).toBe(1);
+    expect(keyColor(keys, 'catering', { catering: -1 })).toBe(7);
+    // An id the list does not know: graphite for the administration key, else the first colour.
+    expect(keyColor([], ADMIN)).toBeNull();
+    expect(keyColor([], 'ghost')).toBe(0);
+    expect(keyColorClass(keys, 'admin')).toBe('kc-admin');
+    expect(keyColorClass(keys, 'oven', { oven: 3 })).toBe('kc3');
+  });
+
+  it('groups keys that share a value, in key order', () => {
+    const groups = sameFor(keys, (k) => k.operators_only);
+    expect(groups.map((g) => [g.value, g.keys.map((k) => k.id)])).toEqual([
+      [false, ['invoices', 'catering', 'oven']],
+      [true, ['admin']],
+    ]);
+    expect(sameFor(keys, (k) => [k.id.length > 4], (a, b) => a[0] === b[0]).map((g) => g.keys.length)).toEqual([3, 1]);
+  });
+
+  it('hands stored colours to the views below', () => {
+    const colors = { oven: 2 };
+    setKeyColors(colors);
+    expect(setContext).toHaveBeenCalledWith(KEY_COLORS, colors);
+  });
+
+  it('lists labels as a phrase', () => {
+    expect(labelList([])).toBe('');
+    expect(labelList(['A'])).toBe('A');
+    expect(labelList(['A', 'B', 'C'])).toBe('A, B and C');
   });
 });
 

@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import ProxyGroups from './ProxyGroups.svelte';
-import type { ProxyEntry, ProxyPool, ProxySettings } from '../lib/schemas';
-import { activePool, group, keyInfos, lane, settings } from '../test-helpers';
+import type { KeyInfo, ProxyEntry, ProxyPool, ProxySettings } from '../lib/schemas';
+import { activePool, fourKeys, group, keyInfos, lane, settings } from '../test-helpers';
 
 const entry = (id: string, name: string, over: Partial<ProxyEntry> = {}): ProxyEntry => ({ id, name, url: `socks5://${id}:1`, ...over });
 const THREE = () => [entry('i2p', 'i2pd', { i2p: true, url: 'http://127.0.0.1:4444' }), entry('tor', 'Tor'), entry('vpn', 'VPN')];
 
-function setup(over: Partial<ProxySettings> = {}, opts: { pool?: ProxyPool | null; live?: ProxySettings } = {}) {
+function setup(over: Partial<ProxySettings> = {}, opts: { pool?: ProxyPool | null; live?: ProxySettings; keys?: KeyInfo[] } = {}) {
   const proxies: ProxySettings = $state({ ...settings().proxies, list: THREE(), ...over });
   const live = opts.live ?? { ...settings().proxies, ...over };
-  render(ProxyGroups, { props: { keys: keyInfos(), proxies, live, pool: opts.pool ?? null } });
+  render(ProxyGroups, { props: { keys: opts.keys ?? keyInfos(), proxies, live, pool: opts.pool ?? null } });
   return proxies;
 }
 
@@ -149,5 +149,27 @@ describe('the groups', () => {
     expect(button('Remove group spare').title).toBe('');
     await fireEvent.click(button('Remove group spare'));
     expect(proxies.groups.map((g) => g.id)).toEqual(['exits']);
+  });
+});
+
+describe('which keys use a group', () => {
+  it('starts at three keys', () => {
+    const [store, catering, , admin] = fourKeys();
+    setup({ list: THREE(), groups: [group('exits', ['tor', 'vpn'], { name: 'Exits' })], default: { group: 'exits' } }, { keys: [store, catering, admin] });
+    expect(screen.getByRole('button', { name: 'Group Exits: keys that use it' }).textContent).toBe('All keys ▾');
+  });
+
+  it('is not shown with two keys', () => {
+    setup({ list: THREE(), groups: [group('exits', ['tor', 'vpn'], { name: 'Exits' })], default: { group: 'exits' } });
+    expect(screen.queryByRole('button', { name: 'Group Exits: keys that use it' })).toBeNull();
+  });
+
+  it('says "All keys" when every key does', async () => {
+    setup({ list: THREE(), groups: [group('exits', ['tor', 'vpn'], { name: 'Exits' })], default: { group: 'exits' } }, { keys: fourKeys() });
+    const b = screen.getByRole('button', { name: 'Group Exits: keys that use it' });
+    expect(b.textContent).toBe('All keys ▾');
+    await fireEvent.click(b);
+    expect(b.getAttribute('aria-expanded')).toBe('true');
+    expect(b.parentElement!.querySelectorAll('.key-tag:not(.off)')).toHaveLength(4);
   });
 });

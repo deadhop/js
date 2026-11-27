@@ -1,6 +1,7 @@
 <script lang="ts">
   import { destination, firstRule, proxyName } from '../lib/routes';
   import { groupSummaries, keyLabel, mapRows, proxySummaries, reaches, ruleText, tiles, why } from '../lib/routeview';
+  import { displayOrder, invoiceKeys } from '../lib/keys';
   import type { KeyInfo, ProxyPool, NetworkSettings } from '../lib/schemas';
 
   // The top-level view: where every relay goes, as the service decided it,
@@ -18,10 +19,14 @@
     pool: ProxyPool;
   } = $props();
 
+  /** Whose routes are shown: every key (null), one key, or every invoice key. */
   let lane = $state<string | null>(null);
   let tryUrl = $state('');
+  /** The lane of every invoice key (a key id never starts with `*`). */
+  const INVOICE = '*invoice';
 
-  const rows = $derived(mapRows(pool.routes, lane));
+  const invoiceIds = $derived(invoiceKeys(keys).map((k) => k.id));
+  const rows = $derived(mapRows(pool.routes, lane === INVOICE ? invoiceIds : lane));
   const top = $derived(tiles(pool.routes, live, pool));
   const summaries = $derived(proxySummaries(pool.routes, live, pool));
   const groups = $derived(groupSummaries(live.proxies, pool, keys));
@@ -33,7 +38,11 @@
     const i = live.proxies.list.findIndex((e) => e.id === id);
     return i < 0 ? '' : `proxy-c${i % 8}`;
   };
-  const keysText = (ids: string[]) => (ids.length === keys.length && keys.length > 1 ? 'All keys' : ids.map((id) => keyLabel(keys, id)).join(', '));
+  const keysText = (ids: string[]) => {
+    if (ids.length === keys.length && keys.length > 1) return 'All keys';
+    if (ids.length > 2 && ids.every((id) => invoiceIds.includes(id))) return `${ids.length} invoice keys`;
+    return ids.map((id) => keyLabel(keys, id)).join(', ');
+  };
 
   /** Where the address typed into "Try an address" would go, per key. */
   const tried = $derived.by(() => {
@@ -53,13 +62,26 @@
 <div class="route-map">
     <div class="map-tools">
       <div class="field">
-        <span class="field-title" id="lane-title">Show the routes of</span>
-        <div class="segmented" role="radiogroup" aria-labelledby="lane-title">
-          <label class:on={lane === null}><input type="radio" name="lane" checked={lane === null} onchange={() => (lane = null)} />All keys</label>
-          {#each keys as k (k.id)}
-            <label class:on={lane === k.id}><input type="radio" name="lane" checked={lane === k.id} onchange={() => (lane = k.id)} />{k.label}</label>
-          {/each}
-        </div>
+        {#if keys.length > 3}
+          <label class="field-title" for="lane-pick">Show the routes of</label>
+          <select id="lane-pick" onchange={(e) => (lane = e.currentTarget.value === '' ? null : e.currentTarget.value)}>
+            <option value="" selected={lane === null}>All keys</option>
+            <option value={INVOICE} selected={lane === INVOICE}>Every invoice key</option>
+            <optgroup label="One key">
+              {#each displayOrder(keys) as k (k.id)}
+                <option value={`${k.id}`} selected={lane === k.id}>{`${k.label}`}</option>
+              {/each}
+            </optgroup>
+          </select>
+        {:else}
+          <span class="field-title" id="lane-title">Show the routes of</span>
+          <div class="segmented" role="radiogroup" aria-labelledby="lane-title">
+            <label class:on={lane === null}><input type="radio" name="lane" checked={lane === null} onchange={() => (lane = null)} />All keys</label>
+            {#each keys as k (k.id)}
+              <label class:on={lane === k.id}><input type="radio" name="lane" checked={lane === k.id} onchange={() => (lane = k.id)} />{k.label}</label>
+            {/each}
+          </div>
+        {/if}
       </div>
       <div class="field try">
         <label class="field-title" for="try-url">Try an address: which rule, which proxy?</label>

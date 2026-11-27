@@ -2,11 +2,13 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import Invoices from './Invoices.svelte';
 import type { PayApi } from '../lib/api';
-import { PUBKEY, adminInvoice, info, invoice, stats } from '../test-helpers';
+import { nip19 } from 'nostr-tools';
+import { shortKey } from '@deadhop/network-ui/lib/format';
+import { PUBKEY, SHOP_PUBKEY, adminInvoice, info, invoice, invoiceKey, invoiceKeyList, shopKey, stats } from '../test-helpers';
 
 const second = adminInvoice({ id: 'f'.repeat(32), index: 1, status: 'confirmed', received_sat: 50_000, memo: 'order 9' });
 
-function setup(api: Partial<Record<keyof PayApi, ReturnType<typeof vi.fn>>>, refreshMs = 60_000, copy = vi.fn().mockResolvedValue(undefined)) {
+function setup(api: Partial<Record<keyof PayApi, ReturnType<typeof vi.fn>>>, refreshMs = 60_000, copy = vi.fn().mockResolvedValue(undefined), key?: string) {
   const onCreated = vi.fn();
   const full = {
     getStats: vi.fn().mockResolvedValue(stats()),
@@ -14,7 +16,7 @@ function setup(api: Partial<Record<keyof PayApi, ReturnType<typeof vi.fn>>>, ref
     createInvoice: vi.fn().mockResolvedValue(invoice()),
     ...api,
   };
-  const view = render(Invoices, { props: { api: full as unknown as PayApi, info: info({ is_admin: true }), onCreated, refreshMs, copy } });
+  const view = render(Invoices, { props: { api: full as unknown as PayApi, info: info({ is_admin: true }), onCreated, refreshMs, copy, ...(key === undefined ? {} : { key }) } });
   return { ...full, onCreated, copy, ...view };
 }
 
@@ -176,5 +178,65 @@ describe('Invoices', () => {
     render(Invoices, { props: { api: api as unknown as PayApi, info: info({ is_admin: true }), onCreated: vi.fn() } });
     await fireEvent.click(await screen.findByRole('button', { name: 'Copy address' }));
     expect(writeText).toHaveBeenCalledWith(second.address);
+  });
+
+  describe('with several invoice keys', () => {
+    const keys = () => invoiceKeyList([invoiceKey({ label: 'Storefront' }), shopKey(), shopKey({ id: 'old', label: 'Pop-up', color: 3, archived_at: 1 })]);
+    const rows = () => ({
+      invoices: [
+        adminInvoice({ key: 'shop', memo: 'shop order' }),
+        adminInvoice({ id: 'a'.repeat(32), index: 1, key: 'gone' }),
+      ],
+      next_before: null,
+    });
+
+    it('filters by key: the list, the counts and new invoices', async () => {
+      const t = setup({ listInvoiceKeys: vi.fn().mockResolvedValue(keys()), listInvoices: vi.fn().mockResolvedValue(rows()) });
+      const select = (await screen.findByLabelText('Key')) as HTMLSelectElement;
+      expect([...select.options].map((o) => o.textContent)).toEqual(['All keys', 'Storefront', 'Shop', 'Archived: Pop-up']);
+      // Each row says which key it came in on; a key the list does not know shows a dash.
+      expect(screen.getByRole('columnheader', { name: 'Key' })).toBeTruthy();
+      const body = screen.getAllByRole('row').slice(1);
+      expect(body.map((r) => r.children[1].textContent)).toEqual(['Shop', '—']);
+      const panel = screen.getByRole('complementary', { name: 'Drop 0000' });
+      expect(within(panel).getByText('Came in on')).toBeTruthy();
+      expect(within(panel).getByText(shortKey(nip19.npubEncode(SHOP_PUBKEY)))).toBeTruthy();
+      await fireEvent.click(within(body[1]).getByRole('button'));
+      expect(within(screen.getByRole('complementary', { name: 'Drop 0001' })).getAllByText('—')).toHaveLength(1);
+      // Unfiltered, the counts are the service's.
+      const counts = () => [...screen.getByRole('group', { name: 'Status' }).querySelectorAll('button')].map((b) => b.textContent);
+      expect(counts()).toEqual(['All10', 'Awaiting payment2', 'Confirming1', 'Paid3', 'Expired4']);
+
+      await fireEvent.change(select, { target: { value: 'shop' } });
+      await waitFor(() => expect(t.listInvoices).toHaveBeenLastCalledWith({ key: 'shop', with_key: true }));
+      expect(counts()).toEqual(['All2', 'Awaiting payment1', 'Confirming0', 'Paid1', 'Expired0']);
+      expect(screen.getByText('Filtered to Shop.')).toBeTruthy();
+
+      // A new invoice starts on the key the list is filtered to.
+      await fireEvent.click(screen.getByRole('button', { name: 'New invoice' }));
+      expect(await screen.findByRole('button', { name: 'Create on Shop' })).toBeTruthy();
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Show all keys' }));
+      await waitFor(() => expect(t.listInvoices).toHaveBeenLastCalledWith({ with_key: true }));
+      expect(screen.queryByText(/^Filtered to/)).toBeNull();
+    });
+
+    it('opens filtered to a key it was given, even one it cannot name', async () => {
+      const t = setup({ listInvoiceKeys: vi.fn().mockResolvedValue(keys()), listInvoices: vi.fn().mockResolvedValue(rows()) }, 60_000, undefined, 'elsewhere');
+      expect(await screen.findByText('Filtered to elsewhere.')).toBeTruthy();
+      expect(t.listInvoices).toHaveBeenCalledWith({ key: 'elsewhere', with_key: true });
+      // The counts of a key the list does not have are zeros.
+      expect(screen.getByRole('button', { name: 'All' }).textContent).toBe('All0');
+    });
+
+    it('keeps the keys it had when the list fails to load again', async () => {
+      const listInvoiceKeys = vi.fn().mockResolvedValueOnce(keys()).mockRejectedValue(new Error('timeout'));
+      setup({ listInvoiceKeys, listInvoices: vi.fn().mockResolvedValue(rows()) });
+      await screen.findByLabelText('Key');
+      await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+      await waitFor(() => expect(listInvoiceKeys).toHaveBeenCalledTimes(2));
+      expect(screen.getByLabelText('Key')).toBeTruthy();
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
   });
 });

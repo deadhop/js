@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import ProxyPool from './ProxyPool.svelte';
 import type { NetworkApi } from '../lib/network-api';
-import type { ProxyEntry, ProxyPool as Pool, ProxySettings, Rule } from '../lib/schemas';
-import { activePool, group, keyInfos, lane, proxyCheck, proxyPool, settings } from '../test-helpers';
+import type { KeyInfo, ProxyEntry, ProxyPool as Pool, ProxySettings, Rule } from '../lib/schemas';
+import { activePool, fourKeys, group, keyInfos, lane, proxyCheck, proxyPool, settings } from '../test-helpers';
 
 const entry = (id: string, url: string, name = '', over: Partial<ProxyEntry> = {}): ProxyEntry => ({ id, name, url, ...over });
 const TWO = () => [entry('a', 'socks5://me:***@10.0.0.1:1080', 'tor'), entry('b', 'http://10.0.0.2:3128')];
@@ -12,12 +12,12 @@ const status = (e: ProxyEntry, over: Partial<Pool['proxies'][number]> = {}): Poo
 });
 const i2pRule = (to: Rule['to']): Rule => ({ name: '', match: ['*.i2p'], keys: [], to, fallback: 'offline' });
 
-function setup(over: Partial<ProxySettings> = {}, opts: { pool?: Pool | null; locked?: boolean; live?: ProxySettings; registriesAt?: string } = {}) {
+function setup(over: Partial<ProxySettings> = {}, opts: { pool?: Pool | null; locked?: boolean; live?: ProxySettings; registriesAt?: string; keys?: KeyInfo[] } = {}) {
   // The form settings the parent hands over are deeply reactive, and the view changes them in place.
   const proxies: ProxySettings = $state({ ...settings().proxies, ...over });
   const live = opts.live ?? { ...settings().proxies, ...over, list: [...(over.list ?? [])] };
   const api = { checkProxy: vi.fn().mockResolvedValue(proxyCheck()) };
-  render(ProxyPool, { props: { api: api as unknown as NetworkApi, keys: keyInfos(), proxies, live, pool: opts.pool ?? null, locked: opts.locked ?? false, ...(opts.registriesAt === undefined ? {} : { registriesAt: opts.registriesAt }) } });
+  render(ProxyPool, { props: { api: api as unknown as NetworkApi, keys: opts.keys ?? keyInfos(), proxies, live, pool: opts.pool ?? null, locked: opts.locked ?? false, ...(opts.registriesAt === undefined ? {} : { registriesAt: opts.registriesAt }) } });
   return { api, proxies };
 }
 
@@ -364,5 +364,34 @@ describe('when the proxies are locked on the host', () => {
     expect(body.disabled).toBe(true);
     expect(body.className).toContain('greyed');
     expect((screen.getByLabelText(/I run a transparent proxy/) as HTMLInputElement).disabled).toBe(true);
+  });
+});
+
+describe('which keys use a proxy', () => {
+  it('stays as it is with two keys', () => {
+    setup({ list: TWO(), default: { proxy: 'a' } });
+    expect(screen.queryByRole('button', { name: /keys that use it/ })).toBeNull();
+  });
+
+  it('sums up the keys with three or more, and opens them', async () => {
+    const rule: Rule = { name: '', match: ['*.onion'], keys: ['oven'], to: { proxy: 'b' }, fallback: 'offline' };
+    setup({ list: [...TWO(), entry('c', 'socks5://10.0.0.3:1080')], default: { proxy: 'a' }, default_keys: { oven: 'direct' }, rules: [rule] }, { keys: fourKeys() });
+    const a = button('Proxy 1: keys that use it');
+    expect(a.textContent).toBe('3 of 4 keys ▾');
+    expect(a.getAttribute('aria-expanded')).toBe('false');
+    expect(button('Proxy 2: keys that use it').textContent).toBe('1 of 4 keys ▾');
+    // Nothing points at proxy 3: no summary.
+    expect(screen.queryByRole('button', { name: 'Proxy 3: keys that use it' })).toBeNull();
+    await fireEvent.click(a);
+    expect(a.textContent).toBe('3 of 4 keys ▴');
+    const tags = [...a.parentElement!.querySelectorAll('.key-tag')];
+    expect(tags.map((t) => [t.textContent, t.classList.contains('off')])).toEqual([
+      ['Administration', false],
+      ['Storefront', false],
+      ['Catering orders', false],
+      ['Oven fund', true],
+    ]);
+    await fireEvent.click(a);
+    expect(a.parentElement!.querySelector('.key-tag')).toBeNull();
   });
 });

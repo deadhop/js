@@ -1,8 +1,11 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import Loading from '@deadhop/network-ui/components/Loading.svelte';
   import { poll } from '@deadhop/network-ui/lib/poll';
   import type { PayApi } from '../lib/api';
-  import type { AdminInvoice, Info, Invoice, Stats, Status } from '../lib/schemas';
+  import type { AdminInvoice, Info, Invoice, InvoiceKeyInfo, Stats, Status } from '../lib/schemas';
+  import { shortNpub, totalsOf } from '../lib/invoicekeys';
+  import KeyChip from './KeyChip.svelte';
   import { dropId, formatSats, formatShortTime, formatTime, shortKey, statusLabel } from '@deadhop/network-ui/lib/format';
   import { payHash } from '../lib/route';
   import CreateInvoice from './CreateInvoice.svelte';
@@ -13,12 +16,15 @@
     info,
     onCreated,
     refreshMs = 15000,
+    key = '',
     copy = (text: string) => navigator.clipboard.writeText(text),
   }: {
     api: PayApi;
     info: Info;
     onCreated: (invoice: Invoice) => void;
     refreshMs?: number;
+    /** The invoice key the list starts filtered to ('' is every key). */
+    key?: string;
     copy?: (text: string) => Promise<void>;
   } = $props();
 
@@ -26,6 +32,10 @@
   let invoices = $state<AdminInvoice[]>([]);
   let nextBefore = $state<number | null>(null);
   let filter = $state<Status | ''>('');
+  /** The invoice key the list shows ('' is every key). */
+  let keyFilter = $state(untrack(() => key));
+  /** The invoice keys, with their totals of all time; optional, so a failure leaves the filter out. */
+  let keys = $state<InvoiceKeyInfo[]>([]);
   let query = $state('');
   let error = $state('');
   /** Whether the list has been loaded once. */
@@ -42,7 +52,7 @@
     ['expired', 'Expired'],
   ];
 
-  function count(s: Stats, value: Status | ''): number {
+  function count(s: Pick<Stats, Status>, value: Status | ''): number {
     return value === '' ? s.pending + s.detected + s.confirmed + s.expired : s[value];
   }
 
@@ -78,10 +88,31 @@
     }
   }
 
-  async function load(which: Status | '' = filter) {
+  /** What the list asks for: a status, a key, and (when there are keys to tell apart) the key of every row. */
+  const params = (which: Status | '', id: string, keyed: boolean) => ({
+    ...(which === '' ? {} : { status: which }),
+    ...(id === '' ? {} : { key: id }),
+    ...(keyed ? { with_key: true } : {}),
+  });
+
+  /** Whether there is more than one invoice key to tell apart (archived ones included). */
+  const several = $derived(keys.length > 1);
+  /** The status counts: the service's, or the filtered key's. */
+  const counts = $derived(keyFilter === '' || keys.length === 0 ? stats : totalsOf(keys, keyFilter));
+  const keyOf = (id: string | undefined) => keys.find((k) => k.id === id);
+
+  async function load(which: Status | '' = filter, id: string = keyFilter) {
     try {
-      const [s, page] = await Promise.all([api.getStats(), api.listInvoices(which === '' ? {} : { status: which })]);
+      // The keys first: a service without invoice keys does not know `with_key`.
+      const list = await Promise.resolve()
+        .then(() => api.listInvoiceKeys())
+        .then(
+          (l) => l.keys,
+          () => keys,
+        );
+      const [s, page] = await Promise.all([api.getStats(), api.listInvoices(params(which, id, list.length > 1))]);
       stats = s;
+      keys = list;
       invoices = page.invoices;
       nextBefore = page.next_before;
       loaded = true;
@@ -93,7 +124,7 @@
 
   async function loadMore(before: number) {
     try {
-      const page = await api.listInvoices(filter === '' ? { before } : { status: filter, before });
+      const page = await api.listInvoices({ ...params(filter, keyFilter, several), before });
       invoices = [...invoices, ...page.invoices];
       nextBefore = page.next_before;
     } catch (e) {
@@ -111,11 +142,12 @@
     }
   }
 
-  // Runs on mount and again whenever the status filter changes.
+  // Runs on mount and again whenever the status or key filter changes.
   $effect(() => {
     // Read here, so a new filter loads again (the poll's own runs are untracked).
     const which = filter;
-    return poll(() => load(which), refreshMs);
+    const id = keyFilter;
+    return poll(() => load(which, id), refreshMs);
   });
 </script>
 
@@ -138,7 +170,7 @@
 {/if}
 
 {#if creating}
-  <CreateInvoice {api} {info} {onCreated} />
+  <CreateInvoice {api} {info} {onCreated} defaultKey={keyFilter} />
 {/if}
 
 <div class="toolbar">
@@ -147,10 +179,22 @@
   <div class="segmented" role="group" aria-label="Status">
     {#each FILTERS as [value, label] (value)}
       <button class={filter === value ? 'primary' : ''} aria-pressed={filter === value} onclick={() => (filter = value)}
-        >{label}{#if stats}<span class="count" aria-hidden="true">{`${count(stats, value)}`}</span>{/if}</button
+        >{label}{#if counts}<span class="count" aria-hidden="true">{`${count(counts, value)}`}</span>{/if}</button
       >
     {/each}
   </div>
+  {#if several}
+    <label class="inline-select" for="key-filter">Key</label>
+    <select id="key-filter" bind:value={keyFilter}>
+      <option value="">All keys</option>
+      {#each keys.filter((k) => k.archived_at === null) as k (k.id)}
+        <option value={`${k.id}`}>{`${k.label}`}</option>
+      {/each}
+      {#each keys.filter((k) => k.archived_at !== null) as k (k.id)}
+        <option value={`${k.id}`}>{`Archived: ${k.label}`}</option>
+      {/each}
+    </select>
+  {/if}
 </div>
 
 <div class="split">
@@ -163,12 +207,16 @@
       <div class="scroll">
         <table class="data">
           <thead>
-            <tr><th>Drop</th><th>Status</th><th>Note</th><th class="num">Amount</th><th>Created</th></tr>
+            <tr><th>Drop</th>{#if several}<th>Key</th>{/if}<th>Status</th><th>Note</th><th class="num">Amount</th><th>Created</th></tr>
           </thead>
           <tbody>
             {#each visible as inv (inv.id)}
               <tr class={inv === picked ? 'on' : ''}>
                 <td><button class="link mono" aria-pressed={inv === picked} onclick={() => (pickedId = inv.id)} title={`Address index ${inv.index}`}>{dropId(inv.index)}</button></td>
+                {#if several}
+                  {@const k = keyOf(inv.key)}
+                  <td>{#if k}<KeyChip label={k.label} color={k.color} archived={k.archived_at !== null} />{:else}<span class="muted">—</span>{/if}</td>
+                {/if}
                 <td><span class={`badge ${inv.status}`}>{statusLabel(inv.status)}</span></td>
                 <td class="memo">{inv.memo}</td>
                 <td class="num">{formatSats(inv.amount_sat)}</td>
@@ -178,6 +226,12 @@
           </tbody>
         </table>
       </div>
+    {/if}
+    {#if several && keyFilter !== ''}
+      <p class="hint pad">
+        {`Filtered to ${keyOf(keyFilter)?.label ?? keyFilter}.`}
+        <button class="link" onclick={() => (keyFilter = '')}>Show all keys</button>
+      </p>
     {/if}
     {#if nextBefore !== null}
       <div class="more"><button onclick={() => loadMore(nextBefore!)}>Load more</button></div>
@@ -217,6 +271,13 @@
         <dt>Received</dt><dd>{formatSats(picked.received_sat)}</dd>
         <dt>Index</dt><dd class="mono">{picked.index}</dd>
         <dt>By</dt><dd class="mono" title={picked.creator}>{shortKey(picked.creator)}</dd>
+        {#if several}
+          {@const k = keyOf(picked.key)}
+          <dt>Came in on</dt>
+          <dd>
+            {#if k}<KeyChip label={k.label} color={k.color} archived={k.archived_at !== null} /> <span class="mono muted">{shortNpub(k.pubkey)}</span>{:else}<span class="muted">—</span>{/if}
+          </dd>
+        {/if}
       </dl>
       <div class="row">
         <a href={payHash(picked.id)}>Open payment page</a>

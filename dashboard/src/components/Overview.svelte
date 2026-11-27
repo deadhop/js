@@ -2,7 +2,9 @@
   import Loading from '@deadhop/network-ui/components/Loading.svelte';
   import { poll } from '@deadhop/network-ui/lib/poll';
   import type { ControlAction, PayApi } from '../lib/api';
-  import type { AdminInvoice, Health, Metrics, PrivacyAudit, Range, RelayHealth, RelayHistory, Series } from '../lib/schemas';
+  import type { AdminInvoice, Health, InvoiceKeyList, Metrics, PrivacyAudit, Range, RelayHealth, RelayHistory, Series } from '../lib/schemas';
+  import { cutOff, daysAgo, invoiceCount, listUrls, nowSecs, npubOf, openCount, percent, relayState, relayTone, shortNpub, totalsOf } from '../lib/invoicekeys';
+  import KeyChip from './KeyChip.svelte';
   import { statusLabel } from '@deadhop/network-ui/lib/format';
   import { dropId, formatBtc, formatBytes, formatDuration, formatSats, formatTime } from '@deadhop/network-ui/lib/format';
   import { errorRate, statsFor } from '@deadhop/network-ui/lib/relays';
@@ -21,6 +23,10 @@
     onAudit,
     onDrops,
     onConnectivity,
+    onKeys,
+    onRelays,
+    now = nowSecs,
+    copy = (text: string) => navigator.clipboard.writeText(text),
     confirm = (message: string) => window.confirm(message),
   }: {
     api: PayApi;
@@ -30,6 +36,12 @@
     onAudit: () => void;
     onDrops: () => void;
     onConnectivity: () => void;
+    /** Open the Keys tab. */
+    onKeys: () => void;
+    /** Open the Network tab on its relays. */
+    onRelays: () => void;
+    now?: () => number;
+    copy?: (text: string) => Promise<void>;
     confirm?: (message: string) => boolean;
   } = $props();
 
@@ -40,9 +52,12 @@
   let audit = $state<PrivacyAudit | null>(null);
   // Recent drops are optional on this page too.
   let recent = $state<AdminInvoice[]>([]);
+  // Each row's key is asked for only once there are keys to tell apart: a
+  // service without invoice keys does not know the argument.
   $effect(() => {
+    const keyed = several;
     Promise.resolve()
-      .then(() => api.listInvoices({}))
+      .then(() => api.listInvoices(keyed ? { with_key: true } : {}))
       .then(
         (page) => (recent = page.invoices.slice(0, 5)),
         () => (recent = []),
@@ -59,6 +74,11 @@
   // A day of relay results; optional here, so a failure just leaves it out.
   let history = $state<RelayHistory | null>(null);
   let range = $state<Range>('week');
+  /** The invoice keys, with their totals of all time and of the last 30 days; optional, so a failure leaves the figures out. */
+  let keyLists = $state<{ all: InvoiceKeyList; recent: InvoiceKeyList } | null>(null);
+  /** Whose takings the totals and the chart show: '' is every key. */
+  let takings = $state('');
+  let copied = $state('');
   let metric = $state<'sat' | 'count'>('sat');
   let error = $state('');
   let notice = $state('');
@@ -99,7 +119,7 @@
     checking = true;
     try {
       await api.checkRelays();
-      await load(range);
+      await load(range, takings);
     } catch (e) {
       error = (e as Error).message;
     } finally {
@@ -110,30 +130,80 @@
   /** Length of the score ring (radius 34). */
   const RING = 2 * Math.PI * 34;
 
-  async function load(which: Range) {
+  /** A call this page can do without: its failure is null. */
+  const optional = <T,>(call: () => Promise<T>): Promise<T | null> =>
+    Promise.resolve()
+      .then(call)
+      .then(
+        (v) => v,
+        () => null,
+      );
+
+  async function load(which: Range, key: string) {
     try {
-      const [health, metrics, series, day] = await Promise.all([
+      const [health, metrics, series, day, all, recent] = await Promise.all([
         api.getHealth(),
         api.getMetrics(),
-        api.getSeries(which),
-        api.getRelayHistory('1d').then(
-          (h) => h,
-          () => null,
-        ),
+        key === '' ? api.getSeries(which) : api.getSeries(which, key),
+        optional(() => api.getRelayHistory('1d')),
+        optional(() => api.listInvoiceKeys()),
+        optional(() => api.listInvoiceKeys(daysAgo(now(), 30))),
       ]);
       data = { health, metrics, series };
       history = day;
+      keyLists = all === null || recent === null ? null : { all, recent };
       error = '';
     } catch (e) {
       error = (e as Error).message;
     }
   }
 
-  // Runs on mount and whenever the chart range changes.
+  // Runs on mount and whenever the chart range or the key changes.
   $effect(() => {
     const which = range;
-    return poll(() => load(which), refreshMs);
+    const key = takings;
+    return poll(() => load(which, key), refreshMs);
   });
+
+  /** Whether there is more than one invoice key to tell apart (archived ones included). */
+  const several = $derived(keyLists !== null && keyLists.all.keys.length > 1);
+
+  /** The invoice keys in use, one row each: from health, with the figures when the key list loaded. */
+  function keyRows(h: Health, lists: typeof keyLists) {
+    const keys = h.keys.filter((k) => !k.operators_only);
+    const recent = lists === null ? [] : lists.recent.keys;
+    const total = recent.reduce((a, k) => a + k.totals.confirmed_sat, 0);
+    return keys.map((k, i) => {
+      const stored = lists?.all.keys.find((x) => x.id === k.id);
+      const received = totalsOf(recent, k.id).confirmed_sat;
+      return {
+        id: k.id,
+        label: k.label,
+        color: stored === undefined ? i : stored.color,
+        pubkey: k.id === 'invoices' ? keyOf(h, 'invoices', serverPubkey) : k.pubkey,
+        relays: relayState(h, k.id),
+        open: stored === undefined ? '—' : String(openCount(stored.totals)),
+        received: lists === null ? '—' : formatSats(received),
+        share: percent(received, total),
+      };
+    });
+  }
+
+  /** The key a drop came in on, as a chip (label and colour), or null when the list does not say. */
+  function dropKey(id: string | undefined) {
+    const k = keyLists!.all.keys.find((x) => x.id === id);
+    return k === undefined ? null : { label: k.label, color: k.color, archived: k.archived_at !== null };
+  }
+
+  async function copyNpub(id: string, hex: string) {
+    try {
+      await copy(npubOf(hex));
+      copied = id;
+    } catch {
+      copied = '';
+      error = 'Could not copy: select the key and copy it by hand.';
+    }
+  }
 
   async function control(action: ControlAction) {
     if (action === 'stop' && !confirm('Stop accepting new invoices? Existing invoices keep being watched.')) return;
@@ -142,7 +212,7 @@
     try {
       await api.control(action);
       notice = MESSAGES[action];
-      await load(range);
+      await load(range, takings);
     } catch (e) {
       error = (e as Error).message;
     } finally {
@@ -278,8 +348,20 @@
   {@const { health, metrics, series } = data}
   {@const connected = health.relays.filter((r) => r.connected).length}
   {@const proxy = proxyTile(health)}
-  {@const invoiceKey = health.keys.find((k) => k.id === 'invoices')}
   <Warnings warnings={health.warnings} />
+  {#each cutOff(health) as k (k.id)}
+    <div class="warning key-alert" role="alert">
+      <div>
+        <strong>{`${k.label} has no relay connected.`}</strong>
+        <span
+          >{k.urls.length === 0
+            ? 'It has no relay at all. Apps cannot reach that key right now. The other keys are not affected.'
+            : `${k.urls.length === 1 ? 'Its only relay' : 'Its relays'}, ${listUrls(k.urls)}, ${k.urls.length === 1 ? 'is' : 'are'} not connected. Apps cannot reach that key right now. The other keys are not affected.`}</span
+        >
+      </div>
+      <button onclick={onRelays}>Give it another relay</button>
+    </div>
+  {/each}
 
   <section class="tiles wide" aria-label="Privacy and proxy">
     {#if audit}
@@ -353,7 +435,7 @@
         <li>
           <span class={`dot ${c === null ? (r.connected ? 'ok' : 'bad') : DOT[c.status]}`} aria-hidden="true"></span>
           <span class="mono url">{r.url}</span>
-          <KeyBadges keys={r.keys} total={health.keys.length} />
+          <KeyBadges keys={r.keys} total={health.keys.length} all={health.keys} />
           <span class={`relay-note ${c === null ? '' : c.status}`}>{relayNote(c)}</span>
           {#if st}
             {@const rate = errorRate(st)}
@@ -372,22 +454,77 @@
     {/if}
   </section>
 
+  <section class="card flush" aria-labelledby="o-keys">
+    <div class="card-head">
+      <h2 id="o-keys">Invoice keys</h2>
+      <span class="hint inline">Each service you run points its checkout at its own key. The wallet and the server are shared.</span>
+      <button class="small" onclick={onKeys}>Manage keys</button>
+    </div>
+    <div class="scroll">
+      <table class="data">
+        <thead><tr><th>Key</th><th>Address</th><th>Relays</th><th class="num">Open</th><th class="num">Received · 30 d</th><th>Share</th><th></th></tr></thead>
+        <tbody>
+          {#each keyRows(health, keyLists) as k (k.id)}
+            <tr>
+              <td><KeyChip label={k.label} color={k.color} />{#if k.id === 'invoices'} <span class="hint inline">original</span>{/if}</td>
+              <td class="mono" title={npubOf(k.pubkey)}>{shortNpub(k.pubkey)}</td>
+              <td><span class={`dot inline ${relayTone(k.relays)}`} aria-hidden="true"></span> {`${k.relays.connected} of ${k.relays.urls.length}`}</td>
+              <td class="num">{k.open}</td>
+              <td class="num">{k.received}</td>
+              <td><meter min="0" max="100" value={k.share} aria-label={`${k.label}: ${k.share}% of the last 30 days`}></meter></td>
+              <td class="num">
+                {#if k.pubkey !== ''}<button class="sm" onclick={() => copyNpub(k.id, k.pubkey)}>{copied === k.id ? 'Copied' : 'Copy npub'}</button>{/if}
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  {#if several && keyLists}
+    <div class="segmented takings" role="group" aria-label="Show takings of">
+      <button class={takings === '' ? 'primary' : ''} aria-pressed={takings === ''} onclick={() => (takings = '')}>All keys</button>
+      {#each keyLists.all.keys as k (k.id)}
+        <button class={takings === k.id ? 'primary' : ''} aria-pressed={takings === k.id} onclick={() => (takings = k.id)}><KeyChip label={k.label} color={k.color} archived={k.archived_at !== null} /></button>
+      {/each}
+    </div>
+  {/if}
+  {@const picked = takings === '' || keyLists === null ? null : keyLists.all.keys.find((k) => k.id === takings)}
   <section class="totals" aria-label="Totals">
-    <div>
-      <span class="lbl">Received</span>
-      <strong>{formatBtc(metrics.received_sat)}</strong>
-      <span class="note-line">{formatSats(metrics.received_sat)}</span>
-    </div>
-    <div>
-      <span class="lbl">Payments</span>
-      <strong>{metrics.payments}</strong>
-      <span class="note-line">{`${metrics.windows[0].count} in the last 24 hours`}</span>
-    </div>
-    <div>
-      <span class="lbl">Invoices</span>
-      <strong>{metrics.invoices}</strong>
-      <span class="note-line">{`${health.database.invoices} in the database`}</span>
-    </div>
+    {#if picked}
+      <div>
+        <span class="lbl">Received</span>
+        <strong>{formatBtc(picked.totals.confirmed_sat)}</strong>
+        <span class="note-line">{`${formatSats(picked.totals.confirmed_sat)} · ${picked.label}`}</span>
+      </div>
+      <div>
+        <span class="lbl">Payments</span>
+        <strong>{picked.totals.confirmed}</strong>
+        <span class="note-line">{`${totalsOf(keyLists!.recent.keys, picked.id).confirmed} in the last 30 days`}</span>
+      </div>
+      <div>
+        <span class="lbl">Invoices</span>
+        <strong>{invoiceCount(picked.totals)}</strong>
+        <span class="note-line">{`${openCount(picked.totals)} open`}</span>
+      </div>
+    {:else}
+      <div>
+        <span class="lbl">Received</span>
+        <strong>{formatBtc(metrics.received_sat)}</strong>
+        <span class="note-line">{formatSats(metrics.received_sat)}</span>
+      </div>
+      <div>
+        <span class="lbl">Payments</span>
+        <strong>{metrics.payments}</strong>
+        <span class="note-line">{`${metrics.windows[0].count} in the last 24 hours`}</span>
+      </div>
+      <div>
+        <span class="lbl">Invoices</span>
+        <strong>{metrics.invoices}</strong>
+        <span class="note-line">{`${health.database.invoices} in the database`}</span>
+      </div>
+    {/if}
     <div>
       <span class="lbl">Addresses created</span>
       <strong>{metrics.addresses_created}</strong>
@@ -443,11 +580,15 @@
       </div>
       <div class="scroll">
         <table class="data">
-          <thead><tr><th>Drop</th><th>Status</th><th class="num">Amount</th><th>Address</th><th>Created</th></tr></thead>
+          <thead><tr><th>Drop</th>{#if several}<th>Key</th>{/if}<th>Status</th><th class="num">Amount</th><th>Address</th><th>Created</th></tr></thead>
           <tbody>
             {#each recent as inv (inv.id)}
               <tr>
                 <td class="mono">{dropId(inv.index)}</td>
+                {#if several}
+                  {@const k = dropKey(inv.key)}
+                  <td>{#if k}<KeyChip label={k.label} color={k.color} archived={k.archived} />{:else}<span class="muted">—</span>{/if}</td>
+                {/if}
                 <td><span class={`badge ${inv.status}`}>{statusLabel(inv.status)}</span></td>
                 <td class="num">{formatSats(inv.amount_sat)}</td>
                 <td class="mono muted address-cell">{inv.address}</td>
@@ -475,12 +616,6 @@
   </section>
 
   <div class="key-strips">
-    <ServiceKey
-      label="Public invoices"
-      purpose="Customers and apps use this key."
-      pubkey={keyOf(health, 'invoices', serverPubkey)}
-      relays={invoiceKey?.relays ?? health.relays.map((r) => r.url)}
-    />
     <ServiceKey label="Administration" purpose="Only operators sign in through this key. Do not publish it." pubkey={keyOf(health, 'admin', adminPubkey)} profile={false} />
   </div>
 {/if}

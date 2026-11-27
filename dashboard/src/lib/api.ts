@@ -17,6 +17,7 @@ import {
   BackupSchema,
   ControlResultSchema,
   HealthSchema,
+  InvoiceKeyListSchema,
   InvoiceListSchema,
   MetricsSchema,
   SeriesSchema,
@@ -30,6 +31,8 @@ import {
   type ControlResult,
   type Health,
   type Info,
+  type Invoice,
+  type InvoiceKeyList,
   type InvoiceList,
   type Metrics,
   type Range,
@@ -52,13 +55,39 @@ import {
 } from './schemas';
 
 export { ApiError, CONNECT_TIMEOUT_MS, toApiError, withTimeout } from '@deadhop/client';
-export type { CreateInvoiceInput, ErrorCode, ToolCaller } from '@deadhop/client';
+export type { ErrorCode, ToolCaller } from '@deadhop/client';
+import type { CreateInvoiceInput as PublicInvoiceInput } from '@deadhop/client';
+
+/** A new invoice; an operator may book it to any invoice key in use (left out: the original one). */
+export type CreateInvoiceInput = PublicInvoiceInput & { key?: string };
 
 export interface ListInvoicesInput {
   status?: Status;
   before?: number;
   limit?: number;
+  /** Only the invoices of this invoice key. */
+  key?: string;
+  /** Add the key each invoice came in on to every row. */
+  with_key?: boolean;
 }
+
+/** A new invoice key. Left out: public invoicing on, not announced, relays and routes of `invoices`. */
+export interface AddInvoiceKeyInput {
+  id: string;
+  label: string;
+  description?: string;
+  /** Palette index, 0 to 7. */
+  color?: number;
+  /** Service name given on this key; empty is the service's own. */
+  name?: string;
+  public_invoicing?: boolean;
+  announce?: boolean;
+  /** The invoice key whose relays and routes it starts with; empty: only what is set for every key. */
+  copy_from?: string;
+}
+
+/** What to change on an invoice key; on the original one only `label`, `description` and `color`. */
+export type UpdateInvoiceKeyInput = Partial<Omit<AddInvoiceKeyInput, 'id' | 'copy_from'>>;
 
 /** Settings to change; anything left out stays as it is. */
 export type SettingsPatch = Partial<Omit<Settings, 'sweep' | 'proxies'>> & {
@@ -83,6 +112,11 @@ export interface WipeInput {
 
 /** The invoice calls plus the operator tools. */
 export class PayApi extends InvoiceApi {
+  /** Create an invoice; an operator may name the invoice key it is booked to. */
+  override createInvoice(input: CreateInvoiceInput): Promise<Invoice> {
+    return super.createInvoice(input);
+  }
+
   listInvoices(input: ListInvoicesInput = {}): Promise<InvoiceList> {
     return this.call('list_invoices', { ...input }, InvoiceListSchema);
   }
@@ -101,10 +135,35 @@ export class PayApi extends InvoiceApi {
     return this.call('get_metrics', {}, MetricsSchema);
   }
 
-  async getSeries(range: Range): Promise<Series> {
-    const series = await this.call('get_payment_series', { range }, SeriesSchema);
+  /** Payments over a range: all of them, or those of one invoice key. */
+  async getSeries(range: Range, key?: string): Promise<Series> {
+    const series = await this.call('get_payment_series', key === undefined ? { range } : { range, key }, SeriesSchema);
     if (series.range !== range) throw new ApiError('bad_response');
     return series;
+  }
+
+  // ---- Invoice keys ----
+
+  /** The invoice keys, archived ones included, with the totals of invoices created since `since` (all, if left out). */
+  listInvoiceKeys(since?: number): Promise<InvoiceKeyList> {
+    return this.call('list_invoice_keys', since === undefined ? {} : { since }, InvoiceKeyListSchema);
+  }
+
+  addInvoiceKey(input: AddInvoiceKeyInput): Promise<InvoiceKeyList> {
+    return this.call('add_invoice_key', { ...input }, InvoiceKeyListSchema);
+  }
+
+  updateInvoiceKey(id: string, patch: UpdateInvoiceKeyInput): Promise<InvoiceKeyList> {
+    return this.call('update_invoice_key', { ...patch, id }, InvoiceKeyListSchema);
+  }
+
+  archiveInvoiceKey(id: string): Promise<InvoiceKeyList> {
+    return this.call('archive_invoice_key', { id }, InvoiceKeyListSchema);
+  }
+
+  /** Bring an archived key back, with the relays and routes of `copyFrom` (the service's default: `invoices`). */
+  restoreInvoiceKey(id: string, copyFrom?: string): Promise<InvoiceKeyList> {
+    return this.call('restore_invoice_key', copyFrom === undefined ? { id } : { id, copy_from: copyFrom }, InvoiceKeyListSchema);
   }
 
   getSettings(): Promise<SettingsView> {

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import CreateInvoice from './CreateInvoice.svelte';
 import type { PayApi } from '../lib/api';
-import { info, invoice } from '../test-helpers';
+import { info, invoice, invoiceKey, invoiceKeyList, shopKey } from '../test-helpers';
 
 function setup(over: Parameters<typeof info>[0] = {}, createInvoice = vi.fn().mockResolvedValue(invoice())) {
   const onCreated = vi.fn();
@@ -74,5 +74,53 @@ describe('CreateInvoice', () => {
     await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('Too many requests'));
     expect(t.onCreated).not.toHaveBeenCalled();
     expect(t.amount.value).toBe('5000');
+  });
+
+  describe('booking to an invoice key', () => {
+    const NOW = 1_795_780_800; // 2026-11-27 12:00 UTC
+    function operator(listInvoiceKeys: ReturnType<typeof vi.fn>, defaultKey?: string) {
+      const createInvoice = vi.fn().mockResolvedValue(invoice());
+      const api = { createInvoice, listInvoiceKeys };
+      render(CreateInvoice, { props: { api: api as unknown as PayApi, info: info({ is_admin: true }), onCreated: vi.fn(), now: () => NOW, ...(defaultKey === undefined ? {} : { defaultKey }) } });
+      return { createInvoice, amount: screen.getByLabelText('Amount (sats)') as HTMLInputElement };
+    }
+    const keys = invoiceKeyList([invoiceKey({ label: 'Storefront' }, { pending: 0, detected: 0, confirmed: 1, expired: 0 }), shopKey({}, { pending: 3, confirmed: 2, expired: 7 }), shopKey({ id: 'old', label: 'Old', archived_at: 1 })]);
+
+    it('offers each key in use with this month’s count, starting on the original one', async () => {
+      const list = vi.fn().mockResolvedValue(keys);
+      const t = operator(list);
+      const group = await screen.findByRole('group', { name: 'Book it to' });
+      expect(list).toHaveBeenCalledWith(Date.UTC(2026, 10, 1) / 1000);
+      // Archived keys take no invoices.
+      expect([...group.querySelectorAll('label')].map((l) => l.textContent!.replace(/\s+/g, ' ').trim())).toEqual(['Storefront1 invoice this month', 'Shop12 invoices this month']);
+      expect((screen.getByRole('radio', { name: /Storefront/ }) as HTMLInputElement).checked).toBe(true);
+      await fireEvent.click(screen.getByRole('radio', { name: /Shop/ }));
+      await fireEvent.input(t.amount, { target: { value: '5000' } });
+      await fireEvent.click(screen.getByRole('button', { name: 'Create on Shop' }));
+      await waitFor(() => expect(t.createInvoice).toHaveBeenCalledWith({ amount_sat: 5000, key: 'shop' }));
+    });
+
+    it('starts on the key it is given', async () => {
+      const t = operator(vi.fn().mockResolvedValue(keys), 'shop');
+      await screen.findByRole('button', { name: 'Create on Shop' });
+      await fireEvent.input(t.amount, { target: { value: '5000' } });
+      await fireEvent.submit(t.amount.closest('form')!);
+      await waitFor(() => expect(t.createInvoice).toHaveBeenCalledWith({ amount_sat: 5000, key: 'shop' }));
+    });
+
+    it('asks nothing with one key in use, without the list, or of the public', async () => {
+      for (const list of [vi.fn().mockResolvedValue(invoiceKeyList()), vi.fn().mockRejectedValue(new Error('x'))]) {
+        const t = operator(list);
+        await waitFor(() => expect(list).toHaveBeenCalled());
+        await fireEvent.input(t.amount, { target: { value: '5000' } });
+        await fireEvent.submit(t.amount.closest('form')!);
+        await waitFor(() => expect(t.createInvoice).toHaveBeenCalledWith({ amount_sat: 5000 }));
+        expect(screen.queryByRole('group', { name: 'Book it to' })).toBeNull();
+        document.body.innerHTML = '';
+      }
+      const listInvoiceKeys = vi.fn();
+      render(CreateInvoice, { props: { api: { listInvoiceKeys } as unknown as PayApi, info: info(), onCreated: vi.fn() } });
+      expect(listInvoiceKeys).not.toHaveBeenCalled();
+    });
   });
 });
