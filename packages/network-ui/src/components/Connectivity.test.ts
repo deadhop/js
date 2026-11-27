@@ -70,7 +70,7 @@ describe('Connectivity', () => {
     const slow = await screen.findByRole('region', { name: 'wss://slow.example' });
     expect(slow.querySelector('.badge:not(.key)')!.textContent).toBe('degraded');
     // Only a restricted relay names its keys.
-    expect(slow.querySelector('.key-badges')!.textContent).toBe('Invoices');
+    expect(slow.querySelector('.key-badges')!.textContent).toBe('Public invoices');
     expect(slow.querySelector('.dot')!.className).toBe('dot warn');
     expect(slow.querySelector('.relay-detail')!.textContent).toBe('The relay did not pass the test event on.');
     expect(slow.querySelector('.relay-stats')!.textContent).toBe('1 health check (1 failed) · 0 replies (0 failed)');

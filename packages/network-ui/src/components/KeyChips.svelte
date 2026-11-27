@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { usersOf } from '../lib/keys';
+  import { keyColorClass, keyColors, usersOf } from '../lib/keys';
   import type { KeyInfo } from '../lib/schemas';
 
   // "Used by": one switch per key for a relay or a proxy. Everything on is the
@@ -29,6 +29,7 @@
   } = $props();
 
   const users = $derived(usersOf(assigned, keys.map((k) => k.id)));
+  const colors = keyColors();
 </script>
 
 {#if keys.length > 1}
@@ -37,7 +38,7 @@
     {#each keys as k (k.id)}
       {@const on = users.includes(k.id)}
       {@const pinned = on && required.includes(k.id)}
-      <label class={on ? 'key-chip on' : 'key-chip'} class:pinned title={pinned ? `${k.label}: ${requiredWhy}` : undefined}>
+      <label class={`key-chip ${keyColorClass(keys, k.id, colors)}`} class:on class:pinned title={pinned ? `${k.label}: ${requiredWhy}` : undefined}>
         <input type="checkbox" checked={on} disabled={disabled || (on && users.length === 1) || pinned} onchange={(e) => onchange(k.id, e.currentTarget.checked)} aria-label={`${label} used by ${k.label}`} />{k.label}
       </label>
     {/each}

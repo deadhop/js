@@ -364,7 +364,7 @@ svg.bars.tall {
   content: '';
   width: 0.4375rem;
   height: 0.4375rem;
-  border-radius: 50%;
+  border-radius: 2px;
   border: 1px solid currentColor;
   box-sizing: border-box;
 }
@@ -374,8 +374,8 @@ svg.bars.tall {
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 .key-chip.on::before {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--kc, var(--accent));
+  border-color: var(--kc, var(--accent));
 }
 .key-chip:hover:not(:has(input:disabled)) {
   border-color: var(--muted);
@@ -478,9 +478,10 @@ dialog.replace-relay h2 {
   min-height: 0;
   margin: 0;
 }
-/* A key that cannot be switched off for this relay: no hover, a lock hint. */
-.key-chip.pinned::before {
-  border-radius: 1px;
+/* A key that cannot be switched off for this relay: no hover, a marked outline. */
+.key-chip.pinned {
+  outline: 1.5px solid var(--tag);
+  outline-offset: 1px;
 }
 .replace-why {
   margin: 0 0 1rem;
@@ -1111,4 +1112,294 @@ dialog.replace-relay h2 {
 .i2p-warning {
   color: var(--bad);
   font-weight: 600;
+}
+
+/* Key colours: eight for the invoice keys, graphite for the administration key. */
+:root {
+  --kc0: #0b6e69;
+  --kc1: #2f5fb3;
+  --kc2: #b4570f;
+  --kc3: #7a4bb0;
+  --kc4: #b3366b;
+  --kc5: #8a6d00;
+  --kc6: #1f7f96;
+  --kc7: #4f7a1f;
+  --kc-admin: #3d4449;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --kc0: #5fc6b9;
+    --kc1: #7fa6f0;
+    --kc2: #f0a04b;
+    --kc3: #b99af0;
+    --kc4: #f08fb6;
+    --kc5: #e8c547;
+    --kc6: #67d4f0;
+    --kc7: #9fd36a;
+    --kc-admin: #c4cbce;
+  }
+}
+.kc0 { --kc: var(--kc0); }
+.kc1 { --kc: var(--kc1); }
+.kc2 { --kc: var(--kc2); }
+.kc3 { --kc: var(--kc3); }
+.kc4 { --kc: var(--kc4); }
+.kc5 { --kc: var(--kc5); }
+.kc6 { --kc: var(--kc6); }
+.kc7 { --kc: var(--kc7); }
+.kc-admin { --kc: var(--kc-admin); }
+/* A key's name with its colour square. */
+.key-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.0625rem 0.5rem;
+  border: 1.5px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+  font-size: 0.8125rem;
+  white-space: nowrap;
+}
+.key-tag i,
+.badge.key i {
+  display: inline-block;
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 2px;
+  background: var(--kc, var(--accent));
+}
+.badge.key i {
+  margin-right: 0.3rem;
+}
+.key-tag.off {
+  color: var(--muted);
+  border-style: dashed;
+}
+.key-tag.off i {
+  background: transparent;
+  outline: 1px solid var(--kc, var(--accent));
+  outline-offset: -1px;
+}
+
+/* Relays × keys: one column per key, the relay column stays put. */
+.relay-matrix-wrap {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1.5px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg);
+  margin: 0 0 0.5rem;
+}
+.relay-matrix {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+  font-size: 0.875rem;
+}
+/* The pages' own table headers are small uppercase labels; the matrix's
+   header cells hold relays and key names, so they keep the body text. */
+.relay-matrix th {
+  font-family: inherit;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--text);
+}
+.relay-matrix th,
+.relay-matrix td {
+  padding: 0.5rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--card);
+  vertical-align: middle;
+}
+.relay-matrix tbody th {
+  font-weight: 400;
+  text-align: left;
+}
+.relay-matrix thead th {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-align: center;
+  white-space: nowrap;
+}
+.relay-matrix thead tr.grp th {
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+.relay-matrix .rl {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  min-width: 16rem;
+  text-align: left;
+  box-shadow: 1.5px 0 0 var(--line);
+}
+.relay-matrix .gs {
+  border-left: 1.5px solid var(--line);
+}
+.relay-matrix td.c {
+  text-align: center;
+  width: 5.5rem;
+}
+.relay-matrix .route {
+  text-align: right;
+}
+.relay-matrix .relay-cell {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.75rem;
+}
+.relay-matrix .relay-cell .relay-url {
+  flex: 1 1 12rem;
+  min-width: 0;
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+}
+.relay-matrix .relay-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.375rem;
+}
+.relay-matrix .relay-actions .via-pill {
+  font-size: 0.75rem;
+}
+.relay-matrix tr.relay-panel td {
+  background: var(--bg);
+}
+.relay-matrix tfoot td {
+  font-size: 0.8125rem;
+  color: var(--muted);
+  text-align: center;
+  border-bottom: 0;
+}
+.relay-matrix tfoot td.rl {
+  text-align: left;
+}
+.relay-matrix .few {
+  color: var(--bad);
+  font-weight: 600;
+}
+/* A checkbox drawn as a square cell: filled when the key uses the relay. */
+.mx-cell {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 1.5px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg);
+  cursor: pointer;
+}
+.mx-cell.on {
+  background: var(--text);
+  border-color: var(--text);
+}
+.mx-cell.on::after {
+  content: '';
+  width: 0.4rem;
+  height: 0.75rem;
+  margin-top: -0.2rem;
+  border: solid var(--card);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.mx-cell.pinned {
+  outline: 2px solid var(--tag);
+  outline-offset: 1px;
+}
+.mx-cell:has(input:disabled) {
+  cursor: default;
+}
+.mx-cell:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.mx-cell input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: inherit;
+}
+.mx-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+}
+.mx-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+.mx-legend .mx-cell {
+  width: 1.125rem;
+  height: 1.125rem;
+  cursor: default;
+}
+.mx-legend .mx-cell.on::after {
+  width: 0.25rem;
+  height: 0.5rem;
+  margin-top: -0.1rem;
+}
+/* The keys, one small box each. */
+.key-legend {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  gap: 0.625rem;
+  margin: 0 0 1rem;
+}
+.key-legend li {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+  min-width: 0;
+  padding: 0.6rem 0.75rem;
+  border: 1.5px solid var(--line);
+  border-radius: 4px;
+}
+.key-legend .few {
+  color: var(--bad);
+  font-weight: 600;
+}
+/* Keys that follow the service's default route, in one line. */
+.same-default {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border: 1.5px dashed var(--line);
+  border-radius: 4px;
+}
+.key-use {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+}
+.relay-matrix tbody th,
+.relay-matrix tfoot th {
+  font-weight: 400;
+  text-align: left;
+}
+.relay-matrix tfoot th {
+  font-size: 0.8125rem;
+  color: var(--muted);
+  border-bottom: 0;
 }

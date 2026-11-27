@@ -2,16 +2,37 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { nip19 } from 'nostr-tools';
 import Overview from './Overview.svelte';
+import { shortKey } from '@deadhop/network-ui/lib/format';
 import type { PayApi } from '../lib/api';
 import { Activity } from '@deadhop/network-ui/lib/activity.svelte';
 import type { RelayHealth } from '../lib/schemas';
-import { ADMIN_PUBKEY, PUBKEY, SERVICE_PUBKEY, activePool, keyInfos, proxyPool, adminInvoice, relayHistory, relayStats, health, metrics, privacyAudit, proxyCheck, series } from '../test-helpers';
+import {
+  ADMIN_PUBKEY,
+  PUBKEY,
+  SERVICE_PUBKEY,
+  SHOP_PUBKEY,
+  activePool,
+  keyInfos,
+  keyInfosWithShop,
+  invoiceKey,
+  invoiceKeyList,
+  shopKey,
+  proxyPool,
+  adminInvoice,
+  relayHistory,
+  relayStats,
+  health,
+  metrics,
+  privacyAudit,
+  proxyCheck,
+  series,
+} from '../test-helpers';
 
 type Fn = ReturnType<typeof vi.fn>;
 
 function setup(
-  over: Partial<Record<'getHealth' | 'getMetrics' | 'getSeries' | 'getPrivacyAudit' | 'listInvoices' | 'control' | 'checkRelays' | 'getRelayHistory', Fn>> = {},
-  props: { refreshMs?: number; onAudit?: Fn; onDrops?: Fn; onConnectivity?: Fn; confirm?: Fn } = {},
+  over: Partial<Record<'getHealth' | 'getMetrics' | 'getSeries' | 'getPrivacyAudit' | 'listInvoices' | 'control' | 'checkRelays' | 'getRelayHistory' | 'listInvoiceKeys', Fn>> = {},
+  props: { refreshMs?: number; onAudit?: Fn; onDrops?: Fn; onConnectivity?: Fn; onKeys?: Fn; onRelays?: Fn; copy?: Fn; confirm?: Fn } = {},
 ) {
   const api = {
     getHealth: vi.fn().mockResolvedValue(health()),
@@ -21,12 +42,29 @@ function setup(
     getPrivacyAudit: vi.fn().mockResolvedValue(privacyAudit()),
     control: vi.fn().mockResolvedValue({ paused: false, restart_pending: true }),
     checkRelays: vi.fn().mockResolvedValue({ relays: [] }),
+    listInvoiceKeys: vi.fn().mockResolvedValue(invoiceKeyList()),
     ...over,
   };
-  const all = { refreshMs: 60_000, onAudit: vi.fn(), onDrops: vi.fn(), onConnectivity: vi.fn(), confirm: vi.fn().mockReturnValue(true), ...props };
+  const all = {
+    refreshMs: 60_000,
+    onAudit: vi.fn(),
+    onDrops: vi.fn(),
+    onConnectivity: vi.fn(),
+    onKeys: vi.fn(),
+    onRelays: vi.fn(),
+    copy: vi.fn().mockResolvedValue(undefined),
+    now: () => NOW,
+    confirm: vi.fn().mockReturnValue(true),
+    ...props,
+  };
   render(Overview, { props: { api: api as unknown as PayApi, serverPubkey: PUBKEY, adminPubkey: ADMIN_PUBKEY, ...all } as never });
   return { ...api, ...all };
 }
+
+const NOW = 1_700_000_000;
+
+/** A table row's cells, as text. */
+const cells = (row: Element) => [...row.children].map((c) => c.textContent!.replace(/\s+/g, ' ').trim());
 
 const text = (label: string) => screen.getByText(label, { selector: '.lbl' }).parentElement!.textContent!.replace(/\s+/g, ' ').trim();
 
@@ -75,11 +113,20 @@ describe('Overview', () => {
     expect(screen.getByText('off').className).toBe('badge expired');
     expect(screen.getByRole('img', { name: /buckets from/ }).getAttribute('aria-label')).toContain('100,000 sats in 7 buckets');
     expect(api.getSeries).toHaveBeenCalledWith('week');
-    // Each key is one line at the bottom; only the public one offers an nprofile.
-    const pub = screen.getByRole('region', { name: 'Public invoices' });
-    expect(within(pub).getByText('Customers and apps use this key.')).toBeTruthy();
-    expect(within(pub).getByRole('button', { name: 'Copy nprofile' })).toBeTruthy();
-    expect(within(pub).getByText(nip19.npubEncode(SERVICE_PUBKEY))).toBeTruthy();
+    // One invoice key: one row, and no key switch or key column anywhere.
+    const keys = screen.getByRole('region', { name: 'Invoice keys' });
+    const row = [...keys.querySelectorAll('tbody tr')].map(cells);
+    expect(row).toEqual([['Public invoicesoriginal', shortKey(nip19.npubEncode(SERVICE_PUBKEY)), '1 of 1', '3', '150,000 sats', '', 'Copy npub']]);
+    expect(api.listInvoiceKeys).toHaveBeenCalledWith();
+    expect(api.listInvoiceKeys).toHaveBeenCalledWith(NOW - 30 * 86_400);
+    expect(screen.queryByRole('group', { name: 'Show takings of' })).toBeNull();
+    await fireEvent.click(within(keys).getByRole('button', { name: 'Copy npub' }));
+    expect(api.copy).toHaveBeenCalledWith(nip19.npubEncode(SERVICE_PUBKEY));
+    await within(keys).findByRole('button', { name: 'Copied' });
+    await fireEvent.click(within(keys).getByRole('button', { name: 'Manage keys' }));
+    expect(api.onKeys).toHaveBeenCalled();
+    // Only the administration key keeps its strip at the bottom.
+    expect(screen.queryByRole('region', { name: 'Public invoices' })).toBeNull();
     const adm = screen.getByRole('region', { name: 'Administration' });
     expect(within(adm).getByText('Only operators sign in through this key. Do not publish it.')).toBeTruthy();
     expect(within(adm).queryByRole('button', { name: 'Copy nprofile' })).toBeNull();
@@ -151,29 +198,85 @@ describe('Overview', () => {
     expect(screen.queryByRole('button', { name: 'Restart relays' })).toBeNull();
   });
 
-  it("puts only the invoices key's relays in its nprofile, and falls back to the config for a key the service has not reported", async () => {
-    const copy = vi.fn().mockResolvedValue(undefined);
-    Object.assign(navigator, { clipboard: { writeText: copy } });
-    const keys = keyInfos(['wss://public.example']);
-    setup({ getHealth: vi.fn().mockResolvedValue(health({ keys })) });
-    await fireEvent.click(await screen.findByRole('button', { name: 'Copy nprofile' }));
-    const decoded = nip19.decode(copy.mock.calls[0][0] as string);
-    expect(decoded.type === 'nprofile' && decoded.data.relays).toEqual(['wss://public.example']);
-
-    // With no key reported at all, the relays the service is connected to stand in.
-    document.body.innerHTML = '';
-    setup({ getHealth: vi.fn().mockResolvedValue(health({ keys: [] })) });
-    await fireEvent.click(await screen.findByRole('button', { name: 'Copy nprofile' }));
-    const fallback = nip19.decode(copy.mock.calls[1][0] as string);
-    expect(fallback.type === 'nprofile' && fallback.data.relays).toEqual(['ws://127.0.0.1:7777']);
-
-    document.body.innerHTML = '';
+  it("falls back to the config for a key the service has not reported, and does without the key list", async () => {
     // The service has not loaded the keys yet: the page's own config names them.
-    setup({ getHealth: vi.fn().mockResolvedValue(health({ keys: [{ ...keys[0], pubkey: '' }] })) });
+    const t = setup({
+      getHealth: vi.fn().mockResolvedValue(health({ keys: [{ ...keyInfos()[0], pubkey: '' }, { ...keyInfos()[1], pubkey: '' }] })),
+      listInvoiceKeys: vi.fn().mockRejectedValue(new Error('unknown tool')),
+    });
     const adm = await screen.findByRole('region', { name: 'Administration' });
     expect(within(adm).getByText(nip19.npubEncode(ADMIN_PUBKEY))).toBeTruthy();
-    const pub = screen.getByRole('region', { name: 'Public invoices' });
-    expect(within(pub).getByText(nip19.npubEncode(PUBKEY))).toBeTruthy();
+    const keys = screen.getByRole('region', { name: 'Invoice keys' });
+    // Without the key list the figures are left blank, and the row keeps its place.
+    expect(cells(keys.querySelector('tbody tr')!)).toEqual(['Public invoicesoriginal', shortKey(nip19.npubEncode(PUBKEY)), '1 of 1', '—', '—', '', 'Copy npub']);
+    expect(screen.queryByRole('alert')).toBeNull();
+
+    // A key the copy fails for says so.
+    t.copy.mockRejectedValueOnce(new Error('denied'));
+    await fireEvent.click(within(keys).getByRole('button', { name: 'Copy npub' }));
+    expect((await screen.findByRole('alert')).textContent).toBe('Could not copy: select the key and copy it by hand.');
+  });
+
+  it('tells keys apart once there are several: rows, the takings switch, the chart and the drops', async () => {
+    const list = invoiceKeyList([invoiceKey({ label: 'Storefront' }), shopKey(), shopKey({ id: 'old', label: 'Pop-up', color: 3, archived_at: 1_699_900_000, pubkey: '' })]);
+    const recent = invoiceKeyList([invoiceKey({ label: 'Storefront' }, { confirmed_sat: 30_000 }), shopKey({}, { confirmed_sat: 10_000, confirmed: 1 }), shopKey({ id: 'old', archived_at: 1 }, { confirmed_sat: 0 })]);
+    const keys = [...keyInfosWithShop(), { id: 'cafe', label: 'Café', pubkey: '', tools: [], operators_only: false, relays: [] }];
+    keys[0] = { ...keys[0], label: 'Storefront' };
+    const t = setup({
+      getHealth: vi.fn().mockResolvedValue(health({ keys, relays: [{ url: 'ws://127.0.0.1:7777', status: 'connected', connected: true, keys: ['admin', 'invoices', 'shop'] }] })),
+      listInvoiceKeys: vi.fn((since?: number) => Promise.resolve(since === undefined ? list : recent)),
+      listInvoices: vi.fn().mockResolvedValue({
+        invoices: [adminInvoice({ key: 'shop' }), adminInvoice({ id: 'a'.repeat(32), index: 1, key: 'old' }), adminInvoice({ id: 'b'.repeat(32), index: 2 })],
+        next_before: null,
+      }),
+    });
+    const table = await screen.findByRole('region', { name: 'Invoice keys' });
+    await waitFor(() => expect(table.querySelectorAll('tbody tr')).toHaveLength(3));
+    expect([...table.querySelectorAll('tbody tr')].map(cells)).toEqual([
+      ['Storefrontoriginal', shortKey(nip19.npubEncode(SERVICE_PUBKEY)), '1 of 1', '3', '30,000 sats', '', 'Copy npub'],
+      ['Shop', shortKey(nip19.npubEncode(SHOP_PUBKEY)), '1 of 1', '1', '10,000 sats', '', 'Copy npub'],
+      // A key the list does not know yet (and has no public key): its place's colour, no figures, nothing to copy.
+      ['Café', '—', '0 of 0', '—', '0 sats', '', ''],
+    ]);
+    expect([...table.querySelectorAll('meter')].map((m) => m.value)).toEqual([75, 25, 0]);
+    expect([...table.querySelectorAll('.key-tag')].map((c) => c.className)).toEqual(['key-tag kc0', 'key-tag kc1', 'key-tag kc2']);
+
+    // The drops say which key each came in on.
+    const drops = screen.getByRole('region', { name: 'Recent drops' });
+    expect([...drops.querySelectorAll('tbody tr')].map((r) => r.children[1].textContent)).toEqual(['Shop', 'Pop-up', '—']);
+    expect(drops.querySelector('.key-tag.off')!.textContent).toBe('Pop-up');
+    expect(t.listInvoices).toHaveBeenCalledWith({ with_key: true });
+
+    // The switch shows one key's takings and payments.
+    const takings = screen.getByRole('group', { name: 'Show takings of' });
+    expect([...takings.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['All keys', 'Storefront', 'Shop', 'Pop-up']);
+    await fireEvent.click(within(takings).getByRole('button', { name: 'Shop' }));
+    await waitFor(() => expect(t.getSeries).toHaveBeenLastCalledWith('week', 'shop'));
+    expect(text('Received')).toBe('Received 0.00050000 BTC 50,000 sats · Shop');
+    expect(text('Payments')).toBe('Payments 1 1 in the last 30 days');
+    expect(text('Invoices')).toBe('Invoices 2 1 open');
+    await fireEvent.click(within(takings).getByRole('button', { name: 'All keys' }));
+    await waitFor(() => expect(t.getSeries).toHaveBeenLastCalledWith('week'));
+    expect(text('Invoices')).toBe('Invoices 10 10 in the database');
+  });
+
+  it('warns about an added key no relay carries, with a way to the relays', async () => {
+    const relays = [
+      { url: 'wss://a.example', status: 'connected', connected: true, keys: ['admin', 'invoices'] },
+      { url: 'wss://b.example', status: 'disconnected', connected: false, keys: ['shop'] },
+      { url: 'wss://c.example', status: 'disconnected', connected: false, keys: ['shop', 'more'] },
+    ];
+    const extra = (id: string, label: string) => ({ id, label, pubkey: '', tools: [], operators_only: false, relays: [] });
+    const keys = [...keyInfosWithShop(), extra('more', 'More'), extra('none', 'None')];
+    const t = setup({ getHealth: vi.fn().mockResolvedValue(health({ keys, relays })) });
+    const alerts = await screen.findAllByRole('alert');
+    expect(alerts.map((a) => a.textContent!.replace(/\s+/g, ' ').trim())).toEqual([
+      'Shop has no relay connected. Its relays, wss://b.example and wss://c.example, are not connected. Apps cannot reach that key right now. The other keys are not affected. Give it another relay',
+      'More has no relay connected. Its only relay, wss://c.example, is not connected. Apps cannot reach that key right now. The other keys are not affected. Give it another relay',
+      'None has no relay connected. It has no relay at all. Apps cannot reach that key right now. The other keys are not affected. Give it another relay',
+    ]);
+    await fireEvent.click(within(alerts[0]).getByRole('button', { name: 'Give it another relay' }));
+    expect(t.onRelays).toHaveBeenCalled();
   });
 
   it('refreshes on a timer', async () => {
@@ -204,10 +307,19 @@ describe('Overview', () => {
     await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('A request was refused.'));
   });
 
+  it('copies with the browser clipboard by default', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    const api = { getHealth: vi.fn().mockResolvedValue(health()), getRelayHistory: vi.fn().mockResolvedValue(relayHistory()), getMetrics: vi.fn().mockResolvedValue(metrics()), getSeries: vi.fn().mockResolvedValue(series()), getPrivacyAudit: vi.fn().mockResolvedValue(privacyAudit()) };
+    render(Overview, { props: { api: api as unknown as PayApi, serverPubkey: PUBKEY, adminPubkey: ADMIN_PUBKEY, onAudit: vi.fn(), onDrops: vi.fn(), onConnectivity: vi.fn(), onKeys: vi.fn(), onRelays: vi.fn() } });
+    await fireEvent.click(within(await screen.findByRole('region', { name: 'Invoice keys' })).getByRole('button', { name: 'Copy npub' }));
+    expect(writeText).toHaveBeenCalledWith(nip19.npubEncode(SERVICE_PUBKEY));
+  });
+
   it('asks the browser to confirm a stop by default', async () => {
     const ask = vi.spyOn(window, 'confirm').mockReturnValue(false);
     const api = { getHealth: vi.fn().mockResolvedValue(health()), getRelayHistory: vi.fn().mockResolvedValue(relayHistory()), getMetrics: vi.fn().mockResolvedValue(metrics()), getSeries: vi.fn().mockResolvedValue(series()), getPrivacyAudit: vi.fn().mockRejectedValue(new Error('x')), control: vi.fn() };
-    render(Overview, { props: { api: api as unknown as PayApi, serverPubkey: PUBKEY, adminPubkey: ADMIN_PUBKEY, onAudit: vi.fn(), onDrops: vi.fn(), onConnectivity: vi.fn() } });
+    render(Overview, { props: { api: api as unknown as PayApi, serverPubkey: PUBKEY, adminPubkey: ADMIN_PUBKEY, onAudit: vi.fn(), onDrops: vi.fn(), onConnectivity: vi.fn(), onKeys: vi.fn(), onRelays: vi.fn() } });
     await fireEvent.click(await screen.findByRole('button', { name: 'Stop invoicing' }));
     expect(ask).toHaveBeenCalled();
     expect(api.control).not.toHaveBeenCalled();
@@ -369,7 +481,7 @@ describe('Overview', () => {
     ]);
 
     // A relay only some keys use says which; one every key uses says nothing.
-    expect([...list].map((li) => li.querySelector('.key-badges')?.textContent ?? '')).toEqual(['', 'Invoices', '', 'Admin']);
+    expect([...list].map((li) => li.querySelector('.key-badges')?.textContent ?? '')).toEqual(['', 'Public invoices', '', 'Administration']);
 
     let finish: (v: unknown) => void = () => undefined;
     t.checkRelays.mockReturnValueOnce(new Promise((r) => (finish = r)));

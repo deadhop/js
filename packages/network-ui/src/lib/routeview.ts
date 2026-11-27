@@ -2,6 +2,7 @@
 // (health) and the saved settings: rows for the map, the tiles above it, a
 // summary per proxy, and the trace of a relay through the rules.
 import { formatDuration } from './format';
+import { labelList, sameFor } from './keys';
 import { REASONS, defaultFor, destination, firstRule, groupName, hostPort, isLocalOrOverlay, proxyName, sameDestination } from './routes';
 import type { Destination, GroupHealth, KeyInfo, NetworkSettings, ProxyPool, ProxySettings, RouteReason, RouteState, Rule } from './schemas';
 
@@ -16,18 +17,21 @@ export interface MapRow {
   reason: RouteReason;
 }
 
-const same = (a: RouteState, b: RouteState) => a.rule === b.rule && a.via === b.via && a.proxy === b.proxy && a.reason === b.reason;
+const same = (a: Pick<RouteState, 'rule' | 'via' | 'proxy' | 'reason'>, b: Pick<RouteState, 'rule' | 'via' | 'proxy' | 'reason'>) => a.rule === b.rule && a.via === b.via && a.proxy === b.proxy && a.reason === b.reason;
 
-/** The map's rows: one per relay when its keys agree, else one per key. `key` limits it to one key. */
-export function mapRows(routes: RouteState[], key: string | null): MapRow[] {
+/** The map's rows: one per relay and way it goes, for the keys that go that way. `key` limits it to one key, or to some. */
+export function mapRows(routes: RouteState[], key: string | string[] | null): MapRow[] {
   const rows: MapRow[] = [];
   const relays = [...new Set(routes.map((r) => r.relay))];
+  const wanted = (k: string) => key === null || (typeof key === 'string' ? k === key : key.includes(k));
   for (const relay of relays) {
-    const mine = routes.filter((r) => r.relay === relay && (key === null || r.key === key));
-    if (mine.length === 0) continue;
-    const row = (r: RouteState, keys: string[]): MapRow => ({ relay, keys, rule: r.rule, via: r.via, proxy: r.proxy, reason: r.reason });
-    if (mine.every((r) => same(r, mine[0]))) rows.push(row(mine[0], mine.map((r) => r.key)));
-    else rows.push(...mine.map((r) => row(r, [r.key])));
+    const mine: MapRow[] = [];
+    for (const r of routes.filter((x) => x.relay === relay && wanted(x.key))) {
+      const found = mine.find((m) => same(m, r));
+      if (found === undefined) mine.push({ relay, keys: [r.key], rule: r.rule, via: r.via, proxy: r.proxy, reason: r.reason });
+      else found.keys.push(r.key);
+    }
+    rows.push(...mine);
   }
   return rows;
 }
@@ -197,4 +201,17 @@ export function defaultGroup(pool: ProxyPool): GroupHealth | null {
   if (typeof d !== 'object' || !('group' in d)) return null;
   const reported = pool.lanes.flatMap((l) => (sameDestination(l.default, d) ? l.groups : [])).find((g) => g.group === d.group);
   return reported ?? { group: d.group, state: pool.state, active: pool.active, reachable: pool.reachable, next_switch_at: null };
+}
+
+/**
+ * Where a relay about to be added would go, in one line: once when every key
+ * agrees, else per group of keys that would go the same way.
+ */
+export function addPreview(keys: KeyInfo[], p: Pick<ProxySettings, 'rules' | 'list' | 'groups'>, url: string): string {
+  const groups = sameFor(keys, (k) => {
+    const i = firstRule(p.rules, k.id, url);
+    return i < 0 ? 'no rule matches: the default route' : `rule ${i + 1} (${p.rules[i].match.join(', ')}) would match: ${destination(p.rules[i].to, p).toLowerCase()}`;
+  });
+  const text = groups.length === 1 ? groups[0].value : groups.map((g) => `${labelList(g.keys.map((k) => k.label))}: ${g.value}`).join('; ');
+  return `Before you add it: ${text}.`;
 }

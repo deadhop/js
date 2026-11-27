@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import RouteMap from './RouteMap.svelte';
-import { group, keyInfos, lane, proxyPool, settings } from '../test-helpers';
+import { fourKeys, group, keyInfos, lane, proxyPool, settings } from '../test-helpers';
 import type { KeyInfo, NetworkSettings, ProxyPool, RouteState, Rule } from '../lib/schemas';
 
 const ONION = 'ws://abc.onion';
@@ -146,5 +146,35 @@ describe('RouteMap', () => {
       'vpn not checked socks5://vpn:1 0 relays No rule points here In group Exits',
       'Exits Round-robin tor → vpn No key uses it now Not on the default route',
     ]);
+  });
+});
+
+describe('RouteMap with more than three keys', () => {
+  const four = fourKeys();
+  const ROUTES4: RouteState[] = ['invoices', 'catering', 'oven', 'admin'].flatMap((k) => [r(k, A, 5, 'proxy', 'tor', 'fallback'), r(k, B, null, k === 'admin' ? 'direct' : 'proxy', k === 'admin' ? null : 'tor', 'default')]);
+  const pool4 = { ...POOL, routes: ROUTES4 };
+  const rows = () => within(table()).getAllByRole('row').slice(1).map(text);
+
+  it('picks whose routes to show from a menu, with every invoice key as a shortcut', async () => {
+    show(base({ relays: [A, B], relay_keys: {} }), pool4, four);
+    const pick = screen.getByLabelText('Show the routes of') as HTMLSelectElement;
+    expect([...pick.options].map((o) => o.text)).toEqual(['All keys', 'Every invoice key', 'Administration', 'Storefront', 'Catering orders', 'Oven fund']);
+    expect(screen.queryByRole('radiogroup')).toBeNull();
+    // Rows merge for the invoice keys that agree.
+    expect(rows().map((t) => t.split(' tor ')[0].split(' Direct ')[0])).toEqual([`${A} All keys 5 ${A}, ${C}`, `${B} 3 invoice keys · default route`, `${B} Administration · default route`]);
+    await fireEvent.change(pick, { target: { value: '*invoice' } });
+    expect(rows().map((t) => t.split(' ').slice(0, 5).join(' '))).toEqual([`${A} 3 invoice keys 5`, `${B} 3 invoice keys ·`]);
+    await fireEvent.change(pick, { target: { value: 'oven' } });
+    expect(rows().map((t) => t.split(' ').slice(0, 4).join(' '))).toEqual([`${A} Oven fund 5`, `${B} Oven fund ·`]);
+    await fireEvent.change(pick, { target: { value: '' } });
+    expect(rows()).toHaveLength(3);
+  });
+
+  it('keeps the buttons with three keys, and names two agreeing keys', () => {
+    const three = [four[0], four[1], four[3]];
+    const routes = ['invoices', 'catering', 'admin'].map((k) => r(k, B, null, k === 'admin' ? 'direct' : 'proxy', k === 'admin' ? null : 'tor', 'default'));
+    show(base({ relays: [B], relay_keys: {} }), { ...POOL, routes }, three);
+    expect(screen.getByRole('radiogroup', { name: 'Show the routes of' })).toBeTruthy();
+    expect(rows()[0].startsWith(`${B} Storefront, Catering orders ·`)).toBe(true);
   });
 });

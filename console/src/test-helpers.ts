@@ -21,6 +21,13 @@ export function keyInfos(relays: string[] = ['ws://127.0.0.1:7777']): KeyInfo[] 
   ];
 }
 
+/** Four keys: the original invoice key relabelled "Storefront", two added invoice keys, and the administration key. */
+export function fourKeys(relays: string[] = ['ws://127.0.0.1:7777']): KeyInfo[] {
+  const [invoices, admin] = keyInfos(relays);
+  const added = (id: string, label: string): KeyInfo => ({ ...invoices, id, label, pubkey: `${id.padEnd(8, '0')}${SERVICE_PUBKEY.slice(8)}` });
+  return [{ ...invoices, label: 'Storefront' }, added('catering', 'Catering orders'), added('oven', 'Oven fund'), admin];
+}
+
 export function proxyCheck(over: Partial<ProxyCheck> = {}): ProxyCheck {
   return {
     proxy: 'socks5://127.0.0.1:9050',

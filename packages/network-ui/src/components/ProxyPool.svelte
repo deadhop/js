@@ -1,12 +1,12 @@
 <script lang="ts">
   import type { NetworkApi } from '../lib/network-api';
-  import { keyTag } from '../lib/keys';
   import { I2P_PORT, MAX_PROXIES, buildProxy, editedUrl, i2pProxy, i2pRule, i2pRuleIndex, isNew, newEntry, parseProxy, type ProxyFields, type ProxyKind } from '../lib/proxy';
-  import { MAX_RULES, POLICIES, destination, proxyName, usedBy } from '../lib/routes';
-  import { defaultGroup, groupStateText } from '../lib/routeview';
+  import { MAX_RULES, POLICIES, destination, keysUsing, proxyName, usedBy } from '../lib/routes';
+  import { defaultGroup, groupStateText, keyLabel } from '../lib/routeview';
   import type { KeyInfo, ProxyCheck, ProxyPool, ProxySettings } from '../lib/schemas';
   import ProxyGroups from './ProxyGroups.svelte';
   import ProxyStatus from './ProxyStatus.svelte';
+  import KeyUse from './KeyUse.svelte';
 
   let {
     api,
@@ -157,7 +157,7 @@
   const lanes = $derived.by((): string[] => {
     if (pool === null || Object.keys(proxies.default_keys).length === 0) return [];
     return pool.lanes.map((l) => {
-      const label = keys.find((k) => k.id === l.key)?.label ?? keyTag(l.key);
+      const label = keyLabel(keys, l.key);
       const g = typeof l.default === 'object' && 'group' in l.default ? (l.groups.find((x) => x.group === (l.default as { group: string }).group) ?? null) : null;
       return `${label}: ${routeState(l.default, l.state, g)}`;
     });
@@ -217,7 +217,7 @@
                 <span class="badge fail" title={st.reason ?? ''}>unreachable</span>
               {/if}
             </span>
-            <div class="proxy-routes"><span class="hint">{carrying(entry.id, used)}</span></div>
+            <div class="proxy-routes"><span class="hint">{carrying(entry.id, used)}</span><KeyUse {keys} used={keysUsing(proxies, { proxy: entry.id }, keys)} label={`Proxy ${i + 1}`} /></div>
             <div class="proxy-foot">
               <span class="proxy-actions">
                 <button type="button" class="sm" aria-label={`Test proxy ${i + 1}`} disabled={t?.checking === true} onclick={() => void test(i)}>{t?.checking ? 'Testing…' : 'Test'}</button>

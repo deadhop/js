@@ -307,6 +307,22 @@ export function usedBy(p: ProxySettings, target: { proxy: string } | { group: st
   return out;
 }
 
+/**
+ * The keys (ids) that may send relays through a proxy or a group: a rule for
+ * the key, its fallback, or the key's default route points at it (or, for a
+ * proxy, at a group it is in).
+ */
+export function keysUsing(p: ProxySettings, target: { proxy: string } | { group: string }, keys: { id: string }[]): string[] {
+  const inGroup = (d: Destination) => 'proxy' in target && typeof d === 'object' && 'group' in d && p.groups.some((g) => g.id === d.group && g.proxies.includes(target.proxy));
+  const hits = (d: Destination) => sameDestination(d, target) || inGroup(d);
+  return keys
+    .filter((k) => {
+      const rules = p.rules.filter((r) => r.keys.length === 0 || r.keys.includes(k.id));
+      return hits(defaultFor(p, k.id)) || rules.some((r) => hits(r.to) || (typeof r.fallback === 'object' && hits(r.fallback.to)));
+    })
+    .map((k) => k.id);
+}
+
 /** A proxy's label, or its address when it has none. */
 export const proxyName = (e: { name: string; url: string }) => (e.name === '' ? e.url : e.name);
 

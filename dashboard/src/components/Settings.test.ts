@@ -1,4 +1,4 @@
-import type { RelayHealth } from '../lib/schemas';
+import type { KeyInfo, RelayHealth } from '../lib/schemas';
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import Settings from './Settings.svelte';
@@ -42,6 +42,13 @@ function setup(
 const general = (view = settingsView(), over: Record<string, ReturnType<typeof vi.fn>> = {}, answer = true) => setup(view, over, answer, undefined, 'general');
 
 const save = () => fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+/** Four keys: the original invoice key relabelled "Storefront", two added invoice keys, and the administration key. */
+function fourKeys(): KeyInfo[] {
+  const [invoices, admin] = settingsView().fixed.keys;
+  const added = (id: string, label: string): KeyInfo => ({ ...invoices, id, label, pubkey: `${id.padEnd(8, '0')}${invoices.pubkey.slice(8)}` });
+  return [{ ...invoices, label: 'Storefront' }, added('catering', 'Catering orders'), added('oven', 'Oven fund'), admin];
+}
 
 describe('Settings', () => {
   it("shows each relay's error rate for the last day, and leaves it out when it cannot be read", async () => {
@@ -371,18 +378,19 @@ describe('Settings', () => {
     setup(settingsView({ settings: settings({ relays: ['ws://127.0.0.1:7777', 'wss://b.example'], relay_keys: { 'wss://b.example': ['invoices'] } }) }));
     const keys = await screen.findByRole('list', { name: 'Keys' });
     const lines = [...keys.querySelectorAll('li')].map((li) => li.textContent!.replace(/\s+/g, ' ').trim());
-    expect(lines[0]).toContain('Public invoices');
-    expect(lines[0]).toContain('2 relays · everything else: direct, no proxy');
-    expect(lines[1]).toContain('Administration');
-    expect(lines[1]).toContain('Operators sign in here');
-    expect(lines[1]).toContain('1 relay · everything else: direct, no proxy');
+    // The administration key first; a key with a single relay stands out.
+    expect(lines).toEqual([
+      'Administration Operators sign in here. 1 relay · everything else: direct, no proxy',
+      'Public invoices Customers and apps create invoices here. 2 relays · everything else: direct, no proxy',
+    ]);
+    expect(keys.querySelectorAll('.few')).toHaveLength(1);
   });
 
   it("names each key's default route", async () => {
     const proxies = { ...settings().proxies, list: [{ id: 'a', name: 'tor', url: 'socks5://h:1' }], default: { proxy: 'a' }, default_keys: { admin: 'block' as const } };
     setup(settingsView({ settings: settings({ proxies }) }));
     const keys = await screen.findByRole('list', { name: 'Keys' });
-    expect([...keys.querySelectorAll('.count')].map((c) => c.textContent)).toEqual(['1 relay · everything else: tor', '1 relay · everything else: nowhere: blocked']);
+    expect([...keys.querySelectorAll('li')].map((li) => li.textContent!.replace(/\s+/g, ' ').replace(/^.*here\. /, '').trim())).toEqual(['1 relay · everything else: nowhere: blocked', '1 relay · everything else: tor']);
   });
 
   describe('which key uses which relay', () => {
@@ -393,11 +401,11 @@ describe('Settings', () => {
       const t = setup(two());
       await screen.findByText('wss://b.example');
       expect(chip('wss://b.example', 'Administration').checked && chip('wss://b.example', 'Public invoices').checked).toBe(true);
-      expect(screen.getAllByText('all keys')).toHaveLength(2);
+      expect(screen.getAllByRole('checkbox', { checked: true })).toHaveLength(4);
       await fireEvent.click(chip('wss://b.example', 'Administration'));
       expect(screen.getByText('1 change')).toBeTruthy();
       expect(screen.getByText('Relays or proxies changed: saving may reconnect the service.')).toBeTruthy();
-      expect(screen.getAllByText('all keys')).toHaveLength(1);
+      expect(screen.getAllByRole('checkbox', { checked: true })).toHaveLength(3);
       await save();
       await waitFor(() => expect(t.updateSettings).toHaveBeenCalledWith({ relay_keys: { 'wss://b.example': ['invoices'] } }));
       expect(t.confirm).toHaveBeenCalledWith(expect.stringContaining('reconnect'));
@@ -521,5 +529,34 @@ describe('Settings', () => {
   it('shows discovery announcements when they are on', async () => {
     general(settingsView({ fixed: { ...settingsView().fixed, announce: true } }));
     await screen.findByText('on');
+  });
+
+  describe('with four keys', () => {
+    const A = 'wss://a.example';
+    const four = () => settingsView({ fixed: { ...settingsView().fixed, keys: fourKeys() }, settings: settings({ relays: ['ws://127.0.0.1:7777', A], relay_keys: { [A]: ['invoices', 'catering'] } }) });
+    const cell = (relay: string, key: string) => screen.getByLabelText(`${relay} used by ${key}`) as HTMLInputElement;
+
+    it('shows a column per key and a box per key, and gives a key every relay from its column', async () => {
+      const t = setup(four());
+      await screen.findByText(A);
+      expect(screen.getAllByRole('columnheader').map((h) => h.textContent!.trim()).slice(4)).toEqual(['Relay', 'Administration', 'Storefront', 'Catering orders', 'Oven fund', 'Route']);
+      const legend = screen.getByRole('list', { name: 'Keys' });
+      expect([...legend.querySelectorAll('.key-tag')].map((k) => k.textContent)).toEqual(['Administration', 'Storefront', 'Catering orders', 'Oven fund']);
+      expect(cell('ws://127.0.0.1:7777', 'Oven fund').disabled).toBe(true);
+      await fireEvent.click(cell(A, 'Catering orders'));
+      expect(cell(A, 'Catering orders').checked).toBe(false);
+      for (const k of ['Oven fund', 'Administration', 'Catering orders']) await fireEvent.click(screen.getByRole('button', { name: `Use every relay for ${k}` }));
+      await save();
+      await waitFor(() => expect(t.updateSettings).toHaveBeenCalledWith({ relay_keys: {} }));
+    });
+
+    it('says once where a new relay would go for the keys that agree', async () => {
+      const view = four();
+      view.settings.proxies.rules = [{ name: '', match: ['*.shop'], keys: ['invoices', 'catering', 'oven'], to: 'block', fallback: 'offline' }];
+      setup(view);
+      const add = await screen.findByLabelText('Add relay');
+      await fireEvent.input(add, { target: { value: 'wss://x.shop' } });
+      expect(screen.getByText('Before you add it: Storefront, Catering orders and Oven fund: rule 1 (*.shop) would match: nowhere: blocked; Administration: no rule matches: the default route.')).toBeTruthy();
+    });
   });
 });

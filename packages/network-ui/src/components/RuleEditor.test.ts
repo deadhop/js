@@ -3,7 +3,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import RuleEditor from './RuleEditor.svelte';
-import { group, keyInfos, lane, proxyPool, settings } from '../test-helpers';
+import { fourKeys, group, keyInfos, lane, proxyPool, settings } from '../test-helpers';
 import { newRule } from '../lib/routes';
 import type { KeyInfo, NetworkSettings, ProxyPool, Rule } from '../lib/schemas';
 
@@ -201,5 +201,48 @@ describe('RuleEditor', () => {
     expect(changes()).toEqual([]);
     await fireEvent.click(screen.getByLabelText(/Direct, no proxy/));
     expect(changes()).toEqual([`${A} tor → Direct`]);
+  });
+});
+
+describe('RuleEditor with three keys or more', () => {
+  const keyChoice = (name: RegExp) => screen.getByLabelText(name, { selector: 'input[name="rule-keys"]' }) as HTMLInputElement;
+
+  it('offers all keys, every invoice key or some, and saves every invoice key as their list', async () => {
+    const t = setup({ form: base({ relays: [A, B], relay_keys: {} }, { rules: [] }), keys: fourKeys(), pool: null });
+    expect(keyChoice(/^All keys/).checked).toBe(true);
+    expect(screen.queryByRole('group', { name: 'This rule: used by' })).toBeNull();
+    expect(screen.getByText('Storefront, Catering orders and Oven fund. Not the administration key. A key you add later joins if it starts with the routes of one of them.')).toBeTruthy();
+    await pattern('*.example');
+    await fireEvent.click(keyChoice(/^Every invoice key/));
+    expect(screen.getByText(/for Storefront, Catering orders, Oven fund, go to/)).toBeTruthy();
+    await fireEvent.click(keyChoice(/^Only some keys/));
+    // The chips start from the list chosen before; switching one off narrows it.
+    expect((screen.getByLabelText('This rule used by Administration') as HTMLInputElement).checked).toBe(false);
+    await fireEvent.click(screen.getByLabelText('This rule used by Oven fund'));
+    await fireEvent.click(screen.getByRole('button', { name: 'Add rule' }));
+    expect(t.onsave.mock.calls[0][0].keys).toEqual(['invoices', 'catering']);
+  });
+
+  it('goes back to all keys, saved as empty', async () => {
+    const t = setup({ form: base({ relays: [A, B], relay_keys: {} }, { rules: [] }), rule: rule(['*.example'], 'direct', { keys: ['oven'] }), index: null, keys: fourKeys(), pool: null });
+    expect(keyChoice(/^Only some keys/).checked).toBe(true);
+    // Ticking every chip does not move the choice.
+    for (const k of ['Administration', 'Storefront', 'Catering orders']) await fireEvent.click(screen.getByLabelText(`This rule used by ${k}`));
+    expect(keyChoice(/^Only some keys/).checked).toBe(true);
+    await fireEvent.click(keyChoice(/^All keys/));
+    await fireEvent.click(screen.getByRole('button', { name: 'Add rule' }));
+    expect(t.onsave.mock.calls[0][0].keys).toEqual([]);
+  });
+
+  it('starts at three keys', () => {
+    const [store, catering, , admin] = fourKeys();
+    setup({ form: base({ relays: [A], relay_keys: {} }, { rules: [] }), keys: [store, catering, admin], pool: null });
+    expect(screen.getByRole('radiogroup', { name: 'For which keys' })).toBeTruthy();
+    expect(screen.getByText(/^Storefront and Catering orders\. Not the administration key\./)).toBeTruthy();
+  });
+
+  it('recognises a rule for every invoice key', () => {
+    setup({ form: base({ relays: [A], relay_keys: {} }, { rules: [] }), rule: rule(['*'], 'direct', { keys: ['oven', 'invoices', 'catering'] }), keys: fourKeys(), pool: null });
+    expect(keyChoice(/^Every invoice key/).checked).toBe(true);
   });
 });

@@ -216,3 +216,230 @@ body {
     display: none;
   }
 }
+
+/* ---- Invoice keys ----
+   The Keys tab, its forms and ledger, and the key figures elsewhere. Key
+   colours come from the network views' --kc0 to --kc7 (classes kc0 to kc7). */
+.swatch {
+  display: inline-block;
+  flex: none;
+  width: 0.875rem;
+  height: 0.875rem;
+  border-radius: 3px;
+  background: var(--kc, var(--accent));
+}
+.swatch.big {
+  width: 2rem;
+  height: 2rem;
+  border: 0;
+  padding: 0;
+  min-height: 0;
+  border-radius: 4px;
+}
+button.swatch.on {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.625rem;
+  margin: 0.25rem 0 0.5rem;
+}
+.pill {
+  margin-left: auto;
+  padding: 0.0625rem 0.5rem;
+  border: 1.5px solid var(--line);
+  border-radius: 999px;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+.keys-title {
+  margin: 0 0 0.75rem;
+}
+.key-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 18rem), 1fr));
+  gap: 0.875rem;
+}
+.key-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  min-width: 0;
+}
+.key-card h3,
+.admin-key h3 {
+  margin: 0;
+}
+.key-card p {
+  margin: 0;
+}
+.key-addr {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  justify-content: space-between;
+  padding: 0.375rem 0.5rem;
+  border: 1.5px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg);
+}
+.admin-key {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.875rem;
+}
+.admin-key .hint {
+  flex: 1 1 20rem;
+}
+.dot.inline {
+  display: inline-block;
+  vertical-align: middle;
+}
+.row.end {
+  justify-content: flex-end;
+}
+.hint.pad {
+  padding: 0.5rem 1.25rem;
+  margin: 0;
+}
+/* Forms that add or change a key, and the invoice form's key choice. */
+.key-form {
+  display: grid;
+  gap: 1rem;
+  flex: 999 1 32rem;
+  min-width: 0;
+}
+.key-side {
+  flex: 1 1 18rem;
+  min-width: 0;
+}
+.key-side ol {
+  padding-left: 1.25rem;
+  display: grid;
+  gap: 0.5rem;
+}
+.key-form fieldset,
+.book-to {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.key-form legend,
+.book-to legend {
+  padding: 0;
+  margin-bottom: 0.375rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: 0.625rem;
+}
+.option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  padding: 0.75rem;
+  border: 1.5px solid var(--line);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.875rem;
+}
+.option.on {
+  border-color: var(--text);
+}
+.option input {
+  margin-top: 0.2rem;
+  accent-color: var(--accent);
+}
+.key-form label.check {
+  align-items: flex-start;
+}
+/* A key's page. */
+.key-title {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.key-cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 26rem), 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+.key-side-stack {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+.key-ids {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.5rem 0.75rem;
+  align-items: center;
+  margin: 0 0 1rem;
+}
+.key-ids dt {
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+.key-ids dd {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.key-ids code.key {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 0.75rem;
+}
+pre.snippet {
+  margin: 0.5rem 0;
+  padding: 0.875rem 1rem;
+  overflow-x: auto;
+  border: 1.5px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+}
+/* Shares and limits. */
+.share-bar {
+  display: flex;
+  height: 0.875rem;
+  margin: 0.5rem 1.25rem 0.75rem;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--line);
+}
+.share-bar span {
+  background: var(--kc, var(--accent));
+}
+table.data meter {
+  width: 6rem;
+}
+.takings {
+  justify-content: flex-end;
+}
+.takings button {
+  display: inline-flex;
+  align-items: center;
+}
+/* An added key that no relay carries: the warning has an action beside it. */
+.key-alert {
+  align-items: center;
+}
+.key-alert > div {
+  display: grid;
+  gap: 0.25rem;
+  flex: 1;
+}

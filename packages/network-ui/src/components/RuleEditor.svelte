@@ -3,7 +3,7 @@
   import type { Destination, Fallback, KeyInfo, ProxyPool, Rule, NetworkSettings } from '../lib/schemas';
   import DestinationPicker from './DestinationPicker.svelte';
   import KeyChips from './KeyChips.svelte';
-  import { toggled } from '../lib/keys';
+  import { invoiceKeys, labelList, toggled } from '../lib/keys';
   import { keyLabel } from '../lib/routeview';
 
   // One rule being made or changed. It only changes the form: nothing
@@ -41,6 +41,17 @@
   let understood = $state(false);
 
   const ids = $derived(keys.map((k) => k.id));
+  const invoiceIds = $derived(invoiceKeys(keys).map((k) => k.id));
+  /** With three keys or more: all keys (saved as empty), every invoice key (saved as their list), or some. */
+  // svelte-ignore state_referenced_locally
+  let forKeys = $state<'all' | 'invoice' | 'some'>(
+    rule.keys.length === 0 ? 'all' : rule.keys.length === invoiceKeys(keys).length && invoiceKeys(keys).every((k) => rule.keys.includes(k.id)) ? 'invoice' : 'some',
+  );
+  function pickKeys(which: 'all' | 'invoice' | 'some') {
+    forKeys = which;
+    if (which === 'all') draft.keys = [];
+    else if (which === 'invoice') draft.keys = [...invoiceIds];
+  }
   const others = $derived(form.proxies.rules.filter((_, i) => i !== index));
   const match = $derived(mode === 'pattern' ? patterns.split(/[\s,]+/).filter((p) => p !== '') : draft.match.filter((p) => p.includes('://')));
   /** Whether the destination is a proxy or a group: only then is there a fallback. */
@@ -128,7 +139,18 @@
 
       <fieldset class="rule-step">
         <legend>2. For which keys</legend>
-        <KeyChips {keys} assigned={draft.keys} label="This rule" onchange={(id, on) => (draft.keys = toggled(draft.keys, id, on, ids))} />
+        {#if keys.length > 2}
+          <div class="rule-choices" role="radiogroup" aria-label="For which keys">
+            <label class="rule-choice" class:on={forKeys === 'all'}><input type="radio" name="rule-keys" checked={forKeys === 'all'} onchange={() => pickKeys('all')} /><span>All keys<small>Saved as “all keys”: keys you add later follow it too.</small></span></label>
+            <label class="rule-choice" class:on={forKeys === 'invoice'}><input type="radio" name="rule-keys" checked={forKeys === 'invoice'} onchange={() => pickKeys('invoice')} /><span>Every invoice key<small>{`${labelList(invoiceKeys(keys).map((k) => k.label))}. Not the administration key. A key you add later joins if it starts with the routes of one of them.`}</small></span></label>
+            <label class="rule-choice" class:on={forKeys === 'some'}><input type="radio" name="rule-keys" checked={forKeys === 'some'} onchange={() => pickKeys('some')} /><span>Only some keys<small>Pick them below.</small></span></label>
+          </div>
+          {#if forKeys === 'some'}
+            <KeyChips {keys} assigned={draft.keys} label="This rule" onchange={(id, on) => (draft.keys = toggled(draft.keys, id, on, ids))} />
+          {/if}
+        {:else}
+          <KeyChips {keys} assigned={draft.keys} label="This rule" onchange={(id, on) => (draft.keys = toggled(draft.keys, id, on, ids))} />
+        {/if}
         <span class="hint">A rule for one key lets the same relay take a different route per key.</span>
       </fieldset>
 

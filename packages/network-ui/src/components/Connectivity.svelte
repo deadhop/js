@@ -89,7 +89,7 @@
       <div class="relay-head">
         <span class={`dot ${c === null ? (live(s.relay) ? 'ok' : 'bad') : DOT[c.status]}`} aria-hidden="true"></span>
         <span class="mono url">{s.relay}</span>
-        <KeyBadges keys={keysOf(s.relay)} total={health!.keys.length} />
+        <KeyBadges keys={keysOf(s.relay)} total={health!.keys.length} all={health!.keys} />
         {#if !live(s.relay)}<span class="badge expired">removed</span>{/if}
         {#if c}<span class={STAMP[c.status][0]}>{STAMP[c.status][1]}</span>{/if}
         <span class="rate">

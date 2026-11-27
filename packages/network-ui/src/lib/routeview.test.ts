@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { defaultGroup, groupStateText, groupSummaries, keyLabel, mapRows, proxySummaries, reaches, ruleText, tiles, trace, why } from './routeview';
+import { addPreview, defaultGroup, groupStateText, groupSummaries, keyLabel, mapRows, proxySummaries, reaches, ruleText, tiles, trace, why } from './routeview';
 import type { RouteState, Rule } from './schemas';
-import { group, keyInfos, lane, proxyPool, settings } from '../test-helpers';
+import { fourKeys, group, keyInfos, lane, proxyPool, settings } from '../test-helpers';
 
 const route = (over: Partial<RouteState>): RouteState => ({ key: 'invoices', relay: 'wss://a.example', rule: null, via: 'proxy', proxy: 'tor', reason: 'default', ...over });
 const rule = (match: string[], to: Rule['to'], keys: string[] = []): Rule => ({ name: '', match, keys, to, fallback: 'offline' });
@@ -21,6 +21,12 @@ describe('the map', () => {
     ]);
     expect(mapRows(routes, 'admin').map((r) => r.reason)).toEqual(['default', 'blocked']);
     expect(mapRows([route({ key: 'admin' })], 'invoices')).toEqual([]);
+  });
+
+  it('merges the keys of a relay that go the same way, and can show some keys only', () => {
+    const routes = ['invoices', 'catering', 'oven'].map((key) => route({ key })).concat(route({ key: 'admin', via: 'direct', proxy: null }));
+    expect(mapRows(routes, null).map((r) => r.keys)).toEqual([['invoices', 'catering', 'oven'], ['admin']]);
+    expect(mapRows(routes, ['oven', 'admin']).map((r) => r.keys)).toEqual([['oven'], ['admin']]);
   });
 
   it('says what each relay reaches', () => {
@@ -140,5 +146,21 @@ describe('proxy summaries and traces', () => {
     expect(defaultGroup(proxyPool({ default: { proxy: 'tor' }, next_switch_at: 5 }))).toBeNull();
     expect(defaultGroup(proxyPool({ default: { group: 'g' }, lanes: [lane('invoices', { default: { proxy: 'x' }, groups: [{ ...h, next_switch_at: 1 }] }), lane('admin', { default: { group: 'g' }, groups: [h] })] }))).toEqual(h);
     expect(defaultGroup(proxyPool({ default: { group: 'g' }, state: 'offline', next_switch_at: 5 }))).toEqual({ group: 'g', state: 'offline', active: null, reachable: 0, next_switch_at: null });
+  });
+});
+
+describe('adding a relay', () => {
+  const keys = fourKeys();
+  const p = { ...settings().proxies, list: [{ id: 'tor', name: 'Tor', url: 'socks5://tor:1' }] };
+
+  it('says once where a relay would go when every key agrees', () => {
+    expect(addPreview(keys, p, 'wss://a.example')).toBe('Before you add it: no rule matches: the default route.');
+  });
+
+  it('groups the keys that would go the same way', () => {
+    const rules = [rule(['*.example'], { proxy: 'tor' }, ['invoices', 'catering', 'oven'])];
+    expect(addPreview(keys, { ...p, rules }, 'wss://a.example')).toBe(
+      'Before you add it: Storefront, Catering orders and Oven fund: rule 1 (*.example) would match: tor; Administration: no rule matches: the default route.',
+    );
   });
 });

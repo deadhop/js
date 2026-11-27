@@ -3,13 +3,14 @@
   // the proxies and the routing rules. The page around it saves the form.
   import { poll } from '@deadhop/network-ui/lib/poll';
   import type { NetworkApi } from '@deadhop/network-ui/lib/network-api';
-  import { ADMIN, dependents, relayUsers, relaysOf } from '@deadhop/network-ui/lib/keys';
+  import { ADMIN, relayUsers, relaysOf } from '@deadhop/network-ui/lib/keys';
   import type { I2pLookup, NetworkSettings, NetworkView as View, RelayHealth, RelayHistory } from '../lib/schemas';
   import type { NetworkHealth } from '@deadhop/network-ui/lib/network-api';
   import { errorRate, i2pName, lookupLine, registryHost, relayProblem, statsFor, withHost } from '@deadhop/network-ui/lib/relays';
-  import { defaultFor, destination, firstRule, proxyName } from '@deadhop/network-ui/lib/routes';
-  import { mapRows, trace, why as whyText } from '@deadhop/network-ui/lib/routeview';
-  import KeyChips from '@deadhop/network-ui/components/KeyChips.svelte';
+  import { destination, firstRule, proxyName } from '@deadhop/network-ui/lib/routes';
+  import { addPreview, mapRows, trace, why as whyText } from '@deadhop/network-ui/lib/routeview';
+  import KeyLegend from '@deadhop/network-ui/components/KeyLegend.svelte';
+  import RelayMatrix from '@deadhop/network-ui/components/RelayMatrix.svelte';
   import I2pRegistries from '@deadhop/network-ui/components/I2pRegistries.svelte';
   import ProxyPool from '@deadhop/network-ui/components/ProxyPool.svelte';
   import { i2pProxy } from '@deadhop/network-ui/lib/proxy';
@@ -181,7 +182,8 @@
     form.relay_names = name.trim() === '' ? rest : { ...rest, [relay]: name };
   }
 
-  const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+  /** How the service routes a relay now, one row per way it goes (none before it answers). */
+  const routesOf = (r: string) => mapRows((health?.proxy_pool.routes ?? []).filter((x) => x.relay === r), null);
 
   // The keys, as the service lists them.
   const keys = $derived(view.keys);
@@ -198,6 +200,96 @@
     </p>
   {/if}
   {#if l.unreachable.length > 0}<p class="hint">{`Not reached: ${l.unreachable.map(registryHost).join(', ')}.`}</p>{/if}
+{/snippet}
+
+{#snippet relayCell(r: string)}
+  {@const st = statsFor(history, r)}
+  {@const check = health?.relay_health.find((c) => c.relay.replace(/\/$/, '') === r.replace(/\/$/, ''))}
+  {@const name = form.relay_names[r]}
+  <code class="relay-url mono">{r}</code>
+  <input
+    class="relay-name"
+    maxlength="60"
+    placeholder="Name"
+    aria-label={`Name of ${r}`}
+    value={name ?? ''}
+    oninput={(e) => setName(r, e.currentTarget.value)}
+  />
+  {#if st}
+    {@const rate = errorRate(st)}
+    <span class={`rate-chip ${rate.tone}`} title="Failed health checks and replies, last 24 hours">{`${rate.text} errors · 24 h`}</span>
+  {/if}
+  {#if check}
+    <span class={`relay-check ${check.status}`} role="status" aria-label={`${r}: last check`}>
+      <span class={`dot ${check.status === 'ok' ? 'ok' : check.status === 'degraded' ? 'warn' : 'bad'}`} aria-hidden="true"></span>
+      <span>{checkLine(check)}</span>
+      {#if check.status !== 'ok' && check.detail !== ''}<span class="relay-check-why">{check.detail}</span>{/if}
+    </span>
+  {/if}
+{/snippet}
+
+{#snippet routeCell(r: string)}
+  {@const routes = routesOf(r)}
+  {@const name = form.relay_names[r]}
+  {#if routes.length === 1}
+    {@const p = form.proxies.list.find((e) => e.id === routes[0].proxy)}
+    <span class={`via-pill ${routes[0].via === 'proxy' ? `proxy-c${form.proxies.list.indexOf(p!) % 8}` : routes[0].via}`} title={whyText(routes[0], routes[0].keys[0], view.settings.proxies)}><span class="via-dot"></span>{routes[0].via === 'proxy' ? proxyName(p ?? { name: '', url: routes[0].proxy! }) : routes[0].via === 'direct' ? 'Direct' : 'No connection'}</span>
+  {:else if routes.length > 1}
+    <span class="via-pill"><span class="via-dot"></span>Differs per key</span>
+  {/if}
+  <button type="button" class="sm" aria-expanded={why === r} aria-label={`Why ${r} goes this way`} onclick={() => (why = why === r ? null : r)}>Why</button>
+  {#if name && routerSaved}
+    <button type="button" class="sm" aria-label={`Look up ${name} again`} disabled={again?.relay === r && again.result === null && again.error === ''} onclick={() => void lookUpAgain(r, name)}>Look up again</button>
+  {/if}
+  <button type="button" class="sm remove" onclick={() => removeRelay(r)} disabled={form.relays.length === 1} aria-label={`Remove ${r}`}>Remove</button>
+{/snippet}
+
+{#snippet panelCell(r: string)}
+  {@const routes = routesOf(r)}
+  {@const name = form.relay_names[r]}
+  {#if again?.relay === r}
+    {@const a = again}
+    <div class="i2p-found" role="region" aria-label={`Lookup of ${name}`}>
+      {#if a.error !== ''}
+        <p class="field-error" role="alert">{a.error}</p>
+      {:else if a.result === null}
+        <p class="hint" role="status">{`Asking the registries about ${name}. This can take a minute.`}</p>
+      {:else}
+        {@render lookupResult(a.result)}
+        {#if withHost(r, a.result.address) === r}
+          <p class="note">The address has not changed.</p>
+        {:else}
+          <p class="field-error" role="alert">{`The address has changed. The relay is saved as ${r}.`}</p>
+        {/if}
+      {/if}
+      <div class="test-row">
+        {#if a.result !== null && withHost(r, a.result.address) !== r}
+          <button type="button" class="sm primary" onclick={() => moveRelay(r, withHost(r, a.result!.address), a.result!.name)}>Use the new address</button>
+        {/if}
+        <button type="button" class="sm" onclick={() => (again = null)}>Close</button>
+      </div>
+    </div>
+  {/if}
+  {#if why === r}
+    <div class="relay-why" role="region" aria-label={`Why ${r} goes this way`}>
+      {#each keys.filter((k) => relayUsers(form!.relay_keys, r, ids).includes(k.id)) as k (k.id)}
+        {@const live = routes.find((x) => x.keys.includes(k.id))}
+        <div class="relay-why-key">
+          <b>{k.label}</b>
+          <span class="hint">{live === undefined ? 'Not reported by the service yet.' : `Now: ${live.via === 'proxy' ? proxyName(form.proxies.list.find((e) => e.id === live.proxy) ?? { name: '', url: live.proxy! }) : live.via === 'direct' ? 'direct' : 'no connection'}, ${whyText(live, k.id, view.settings.proxies)}.`}</span>
+          <ol class="plain relay-trace" aria-label={`Rules checked for ${k.label}`}>
+            {#each trace(form.proxies.rules, k.id, r) as c (c.no)}
+              <li class:matched={c.matched}><span>{c.matched ? '✓' : '–'}</span><span>{c.no}</span><span class="mono">{c.match}</span><span>{c.matched ? `matched: ${destination(form.proxies.rules[c.no - 1].to, form.proxies).toLowerCase()}` : c.forKey ? 'no match' : `not for ${k.label}`}</span></li>
+            {:else}
+              <li><span>·</span><span></span><span>No rules</span><span>default route</span></li>
+            {/each}
+            {#if firstRule(form.proxies.rules, k.id, r) < 0 && form.proxies.rules.length > 0}<li><span>·</span><span></span><span>No rule matched</span><span>default route</span></li>{/if}
+          </ol>
+        </div>
+      {/each}
+      <button type="button" class="sm" onclick={() => (netView = 'rules')}>Open the rules</button>
+    </div>
+  {/if}
 {/snippet}
 
   <div class="network-nav segmented" role="tablist" aria-label="Network">
@@ -219,109 +311,10 @@
       <h2 id="s-conn">Relays</h2>
       <button type="button" class="sm relays-test" onclick={() => void testRelays()} disabled={testing}>{testing ? 'Testing…' : 'Test relays'}</button>
     </div>
-    <ul class="plain key-explain" aria-label="Keys">
-      {#each keys as k (k.id)}
-        <li>
-          <strong>{k.label}</strong>
-          <span class="muted">{k.operators_only ? 'Operators sign in here to manage the service. Nobody else is answered.' : 'Customers and apps create and look up invoices here.'}</span>
-          <span class="count">{`${plural(relaysOf(form.relays, form.relay_keys, k.id, ids).length, 'relay')} · everything else: ${destination(defaultFor(form.proxies, k.id), form.proxies).toLowerCase()}`}</span>
-        </li>
-      {/each}
-    </ul>
+    <KeyLegend {keys} {form} />
     <div class="field">
       <span class="field-title">Relays</span>
-      <ul class="plain relay-edit">
-        {#each form.relays as r (r)}
-          {@const st = statsFor(history, r)}
-          {@const check = health?.relay_health.find((c) => c.relay.replace(/\/$/, '') === r.replace(/\/$/, ''))}
-          {@const routes = mapRows((health?.proxy_pool.routes ?? []).filter((x) => x.relay === r), null)}
-          {@const name = form.relay_names[r]}
-          <li>
-            <code class="relay-url mono">{r}</code>
-            <input
-              class="relay-name"
-              maxlength="60"
-              placeholder="Name"
-              aria-label={`Name of ${r}`}
-              value={name ?? ''}
-              oninput={(e) => setName(r, e.currentTarget.value)}
-            />
-            {#if st}
-              {@const rate = errorRate(st)}
-              <span class={`rate-chip ${rate.tone}`} title="Failed health checks and replies, last 24 hours">{`${rate.text} errors · 24 h`}</span>
-            {/if}
-            <KeyChips
-              {keys}
-              assigned={relayUsers(form.relay_keys, r, ids)}
-              required={dependents(form.relays, form.relay_keys, r, ids, pageRelays)}
-              requiredWhy="its only relay, or the only one this page connects through, so it stays on."
-              label={r}
-              onchange={(id, on) => useRelay(r, id, on)}
-            />
-            {#if routes.length === 1}
-              {@const p = form.proxies.list.find((e) => e.id === routes[0].proxy)}
-              <span class={`via-pill ${routes[0].via === 'proxy' ? `proxy-c${form.proxies.list.indexOf(p!) % 8}` : routes[0].via}`} title={whyText(routes[0], routes[0].keys[0], view.settings.proxies)}><span class="via-dot"></span>{routes[0].via === 'proxy' ? proxyName(p ?? { name: '', url: routes[0].proxy! }) : routes[0].via === 'direct' ? 'Direct' : 'No connection'}</span>
-            {:else if routes.length > 1}
-              <span class="via-pill"><span class="via-dot"></span>Differs per key</span>
-            {/if}
-            <button type="button" class="sm" aria-expanded={why === r} aria-label={`Why ${r} goes this way`} onclick={() => (why = why === r ? null : r)}>Why</button>
-            {#if name && routerSaved}
-              <button type="button" class="sm" aria-label={`Look up ${name} again`} disabled={again?.relay === r && again.result === null && again.error === ''} onclick={() => void lookUpAgain(r, name)}>Look up again</button>
-            {/if}
-            <button type="button" class="sm remove" onclick={() => removeRelay(r)} disabled={form.relays.length === 1} aria-label={`Remove ${r}`}>Remove</button>
-            {#if check}
-              <span class={`relay-check ${check.status}`} role="status" aria-label={`${r}: last check`}>
-                <span class={`dot ${check.status === 'ok' ? 'ok' : check.status === 'degraded' ? 'warn' : 'bad'}`} aria-hidden="true"></span>
-                <span>{checkLine(check)}</span>
-                {#if check.status !== 'ok' && check.detail !== ''}<span class="relay-check-why">{check.detail}</span>{/if}
-              </span>
-            {/if}
-            {#if again?.relay === r}
-              {@const a = again}
-              <div class="i2p-found" role="region" aria-label={`Lookup of ${name}`}>
-                {#if a.error !== ''}
-                  <p class="field-error" role="alert">{a.error}</p>
-                {:else if a.result === null}
-                  <p class="hint" role="status">{`Asking the registries about ${name}. This can take a minute.`}</p>
-                {:else}
-                  {@render lookupResult(a.result)}
-                  {#if withHost(r, a.result.address) === r}
-                    <p class="note">The address has not changed.</p>
-                  {:else}
-                    <p class="field-error" role="alert">{`The address has changed. The relay is saved as ${r}.`}</p>
-                  {/if}
-                {/if}
-                <div class="test-row">
-                  {#if a.result !== null && withHost(r, a.result.address) !== r}
-                    <button type="button" class="sm primary" onclick={() => moveRelay(r, withHost(r, a.result!.address), a.result!.name)}>Use the new address</button>
-                  {/if}
-                  <button type="button" class="sm" onclick={() => (again = null)}>Close</button>
-                </div>
-              </div>
-            {/if}
-            {#if why === r}
-              <div class="relay-why" role="region" aria-label={`Why ${r} goes this way`}>
-                {#each keys.filter((k) => relayUsers(form!.relay_keys, r, ids).includes(k.id)) as k (k.id)}
-                  {@const live = routes.find((x) => x.keys.includes(k.id))}
-                  <div class="relay-why-key">
-                    <b>{k.label}</b>
-                    <span class="hint">{live === undefined ? 'Not reported by the service yet.' : `Now: ${live.via === 'proxy' ? proxyName(form.proxies.list.find((e) => e.id === live.proxy) ?? { name: '', url: live.proxy! }) : live.via === 'direct' ? 'direct' : 'no connection'}, ${whyText(live, k.id, view.settings.proxies)}.`}</span>
-                    <ol class="plain relay-trace" aria-label={`Rules checked for ${k.label}`}>
-                      {#each trace(form.proxies.rules, k.id, r) as c (c.no)}
-                        <li class:matched={c.matched}><span>{c.matched ? '✓' : '–'}</span><span>{c.no}</span><span class="mono">{c.match}</span><span>{c.matched ? `matched: ${destination(form.proxies.rules[c.no - 1].to, form.proxies).toLowerCase()}` : c.forKey ? 'no match' : `not for ${k.label}`}</span></li>
-                      {:else}
-                        <li><span>·</span><span></span><span>No rules</span><span>default route</span></li>
-                      {/each}
-                      {#if firstRule(form.proxies.rules, k.id, r) < 0 && form.proxies.rules.length > 0}<li><span>·</span><span></span><span>No rule matched</span><span>default route</span></li>{/if}
-                    </ol>
-                  </div>
-                {/each}
-                <button type="button" class="sm" onclick={() => (netView = 'rules')}>Open the rules</button>
-              </div>
-            {/if}
-          </li>
-        {/each}
-      </ul>
+      <RelayMatrix {keys} relays={form.relays} relayKeys={form.relay_keys} dashboardRelays={pageRelays} onuse={useRelay} relay={relayCell} route={routeCell} panel={panelCell} panelOpen={(r) => why === r || again?.relay === r} />
       <div class="add-relay">
         <label class="visually-hidden" for="relay">Add relay</label>
         <input
@@ -351,11 +344,7 @@
       {/if}
       {#if relayError === '' && /^wss?:\/\/\S+$/.test(newRelay.trim())}
         {@const url = newRelay.trim()}
-        {@const lines = keys.map((k) => {
-          const i = firstRule(form!.proxies.rules, k.id, url);
-          return i < 0 ? 'no rule matches: the default route' : `rule ${i + 1} (${form!.proxies.rules[i].match.join(', ')}) would match: ${destination(form!.proxies.rules[i].to, form!.proxies).toLowerCase()}`;
-        })}
-        <p class="hint relay-preview" role="status">{lines.every((l) => l === lines[0]) ? `Before you add it: ${lines[0]}.` : `Before you add it: ${keys.map((k, i) => `${k.label}: ${lines[i]}`).join('; ')}.`}</p>
+        <p class="hint relay-preview" role="status">{addPreview(keys, form.proxies, url)}</p>
       {/if}
       <p class="hint">
         On mainnet relays use <span class="mono">wss://</span>. Plain <span class="mono">ws://</span> is for a relay on this machine, or on Tor

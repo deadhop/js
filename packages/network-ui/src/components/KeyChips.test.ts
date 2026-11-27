@@ -3,6 +3,7 @@ import { fireEvent, render, screen } from '@testing-library/svelte';
 import KeyChips from './KeyChips.svelte';
 import KeyBadges from './KeyBadges.svelte';
 import { keyInfos } from '../test-helpers';
+import { KEY_COLORS } from '../lib/keys';
 
 describe('KeyChips', () => {
   it('shows one switch per key, all on for an empty assignment, and reports a change', async () => {
@@ -43,11 +44,23 @@ describe('KeyChips', () => {
 
 describe('KeyBadges', () => {
   it('names the keys only when not every key uses the thing', () => {
-    const { container, rerender } = render(KeyBadges, { props: { keys: ['invoices'], total: 2 } });
-    expect(container.textContent).toBe('Invoices');
+    const { container, rerender } = render(KeyBadges, { props: { keys: ['invoices'], total: 2, all: keyInfos() } });
+    expect(container.textContent).toBe('Public invoices');
+    expect(container.querySelector('.badge.key')!.classList.contains('kc0')).toBe(true);
     rerender({ keys: ['invoices', 'admin'], total: 2 });
     expect(container.textContent).toBe('');
     rerender({ keys: [], total: 2 });
     expect(container.textContent).toBe('');
+  });
+
+  it('falls back to the id without the list of keys', () => {
+    const { container } = render(KeyBadges, { props: { keys: ['admin'], total: 2 } });
+    expect(container.textContent).toBe('admin');
+    expect(container.querySelector('.badge.key')!.classList.contains('kc-admin')).toBe(true);
+  });
+
+  it('takes stored colours from the page', () => {
+    const { container } = render(KeyBadges, { props: { keys: ['invoices'], total: 2, all: keyInfos() }, context: new Map([[KEY_COLORS, { invoices: 4 }]]) });
+    expect(container.querySelector('.badge.key')!.classList.contains('kc4')).toBe(true);
   });
 });

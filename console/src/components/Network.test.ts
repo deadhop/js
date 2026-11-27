@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import Network from './Network.svelte';
 import type { ConsoleApi } from '../lib/api';
-import { health, proxyCheck, relayHistory, relayStats, settings, networkView } from '../test-helpers';
+import { fourKeys, health, proxyCheck, relayHistory, relayStats, settings, networkView } from '../test-helpers';
 
 // jsdom has <dialog> but not its modal methods.
 HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) {
@@ -230,18 +230,19 @@ describe('Network', () => {
     setup(networkView({ settings: settings({ relays: ['ws://127.0.0.1:7777', 'wss://b.example'], relay_keys: { 'wss://b.example': ['invoices'] } }) }));
     const keys = await screen.findByRole('list', { name: 'Keys' });
     const lines = [...keys.querySelectorAll('li')].map((li) => li.textContent!.replace(/\s+/g, ' ').trim());
-    expect(lines[0]).toContain('Public invoices');
-    expect(lines[0]).toContain('2 relays · everything else: direct, no proxy');
-    expect(lines[1]).toContain('Administration');
-    expect(lines[1]).toContain('Operators sign in here');
-    expect(lines[1]).toContain('1 relay · everything else: direct, no proxy');
+    // The administration key first; a key with a single relay stands out.
+    expect(lines).toEqual([
+      'Administration Operators sign in here. 1 relay · everything else: direct, no proxy',
+      'Public invoices Customers and apps create invoices here. 2 relays · everything else: direct, no proxy',
+    ]);
+    expect(keys.querySelectorAll('.few')).toHaveLength(1);
   });
 
   it("names each key's default route", async () => {
     const proxies = { ...settings().proxies, list: [{ id: 'a', name: 'tor', url: 'socks5://h:1' }], default: { proxy: 'a' }, default_keys: { admin: 'block' as const } };
     setup(networkView({ settings: settings({ proxies }) }));
     const keys = await screen.findByRole('list', { name: 'Keys' });
-    expect([...keys.querySelectorAll('.count')].map((c) => c.textContent)).toEqual(['1 relay · everything else: tor', '1 relay · everything else: nowhere: blocked']);
+    expect([...keys.querySelectorAll('li')].map((li) => li.textContent!.replace(/\s+/g, ' ').replace(/^.*here\. /, '').trim())).toEqual(['1 relay · everything else: nowhere: blocked', '1 relay · everything else: tor']);
   });
 
   describe('which key uses which relay', () => {
@@ -252,11 +253,11 @@ describe('Network', () => {
       const t = setup(two());
       await screen.findByText('wss://b.example');
       expect(chip('wss://b.example', 'Administration').checked && chip('wss://b.example', 'Public invoices').checked).toBe(true);
-      expect(screen.getAllByText('all keys')).toHaveLength(2);
+      expect(screen.getAllByRole('checkbox', { checked: true })).toHaveLength(4);
       await fireEvent.click(chip('wss://b.example', 'Administration'));
       expect(screen.getByText('1 change')).toBeTruthy();
       expect(screen.getByText('Relays or proxies changed: saving may reconnect the service.')).toBeTruthy();
-      expect(screen.getAllByText('all keys')).toHaveLength(1);
+      expect(screen.getAllByRole('checkbox', { checked: true })).toHaveLength(3);
       await save();
       await waitFor(() => expect(t.updateNetwork).toHaveBeenCalledWith({ relay_keys: { 'wss://b.example': ['invoices'] } }));
       expect(t.confirm).toHaveBeenCalledWith(expect.stringContaining('reconnect'));
@@ -427,5 +428,38 @@ describe('Network', () => {
     expect(screen.getByText('Group Exits: intervals run from 1 minute to 7 days.')).toBeTruthy();
     await save();
     expect(t.updateNetwork).not.toHaveBeenCalled();
+  });
+
+  describe('with four keys', () => {
+    const A = 'wss://a.example';
+    const four = () => networkView({ keys: fourKeys(), settings: settings({ relays: ['ws://127.0.0.1:7777', A], relay_keys: { [A]: ['invoices', 'catering'] } }) });
+    const cell = (relay: string, key: string) => screen.getByLabelText(`${relay} used by ${key}`) as HTMLInputElement;
+
+    it('shows a column per key, and gives a key every relay from its column', async () => {
+      const t = setup(four());
+      await screen.findByText(A);
+      expect(screen.getAllByRole('columnheader').map((h) => h.textContent!.trim()).slice(4)).toEqual(['Relay', 'Administration', 'Storefront', 'Catering orders', 'Oven fund', 'Route']);
+      expect(cell(A, 'Oven fund').checked).toBe(false);
+      // Oven fund has only this page's relay, so it stays on there.
+      expect(cell('ws://127.0.0.1:7777', 'Oven fund').disabled).toBe(true);
+      await fireEvent.click(screen.getByRole('button', { name: 'Use every relay for Oven fund' }));
+      expect(cell(A, 'Oven fund').checked).toBe(true);
+      await fireEvent.click(screen.getByRole('button', { name: 'Use every relay for Administration' }));
+      expect(screen.getByText('1 change')).toBeTruthy();
+      // Every key on every relay is saved as "all keys".
+      await fireEvent.click(screen.getByRole('button', { name: 'Use every relay for Storefront' }));
+      expect((screen.getByRole('button', { name: 'Use every relay for Storefront' }) as HTMLButtonElement).disabled).toBe(true);
+      await save();
+      await waitFor(() => expect(t.updateNetwork).toHaveBeenCalledWith({ relay_keys: {} }));
+    });
+
+    it('says once where a new relay would go for the keys that agree', async () => {
+      const view = four();
+      view.settings.proxies.rules = [{ name: '', match: ['*.shop'], keys: ['invoices', 'catering', 'oven'], to: 'block', fallback: 'offline' }];
+      setup(view);
+      const add = await screen.findByLabelText('Add relay');
+      await fireEvent.input(add, { target: { value: 'wss://x.shop' } });
+      expect(screen.getByText('Before you add it: Storefront, Catering orders and Oven fund: rule 1 (*.shop) would match: nowhere: blocked; Administration: no rule matches: the default route.')).toBeTruthy();
+    });
   });
 });

@@ -1,4 +1,5 @@
 // Fixtures shared by the unit tests.
+import type { InvoiceKeyInfo, InvoiceKeyList, KeyTotals } from './lib/schemas';
 import type { AdminInvoice, I2pLookup, AuditLog, Health, Info, KeyInfo, Invoice, Metrics, PrivacyAudit, ProxyCheck, ProxyPool, RelayHistory, RelayStats, Series, Settings, SettingsView, Stats } from './lib/schemas';
 
 export const ADDRESS = 'bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080';
@@ -226,4 +227,48 @@ export function relayStats(over: Partial<RelayStats> = {}): RelayStats {
 
 export function relayHistory(over: Partial<RelayHistory> = {}): RelayHistory {
   return { window: '1d', bucket_secs: 3600, since: 1_700_000_000, until: 1_700_014_400, relays: [relayStats()], ...over };
+}
+
+// ---- Invoice keys (added for the invoice-keys views) ----
+
+export const SHOP_PUBKEY = 'f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9';
+
+/** An invoice key with its totals; the original one unless told otherwise. */
+export function invoiceKey(over: Partial<InvoiceKeyInfo> = {}, totals: Partial<KeyTotals> = {}): InvoiceKeyInfo {
+  const id = over.id ?? 'invoices';
+  return {
+    id,
+    label: 'Public invoices',
+    description: '',
+    color: 0,
+    name: '',
+    public_invoicing: true,
+    announce: false,
+    created_at: 1_699_000_000,
+    created_by: '',
+    archived_at: null,
+    pubkey: SERVICE_PUBKEY,
+    original: id === 'invoices',
+    relays: ['ws://127.0.0.1:7777'],
+    ...over,
+    totals: { key: id, pending: 2, detected: 1, confirmed: 3, expired: 4, confirmed_sat: 150_000, detected_sat: 50_000, last_paid_at: 1_700_000_000, ...totals },
+  };
+}
+
+/** An added key, `shop` ("Shop"), in colour 1. */
+export function shopKey(over: Partial<InvoiceKeyInfo> = {}, totals: Partial<KeyTotals> = {}): InvoiceKeyInfo {
+  return invoiceKey(
+    { id: 'shop', label: 'Shop', description: 'Shop checkout', color: 1, created_by: PUBKEY, created_at: 1_699_500_000, pubkey: SHOP_PUBKEY, ...over },
+    { pending: 1, detected: 0, confirmed: 1, expired: 0, confirmed_sat: 50_000, detected_sat: 0, ...totals },
+  );
+}
+
+export function invoiceKeyList(keys: InvoiceKeyInfo[] = [invoiceKey()], over: Partial<InvoiceKeyList> = {}): InvoiceKeyList {
+  return { keys, max_keys: 7, since: 0, ...over };
+}
+
+/** The service's keys with `shop` added, as health and settings report them. */
+export function keyInfosWithShop(relays: string[] = ['ws://127.0.0.1:7777']): KeyInfo[] {
+  const [invoices, admin] = keyInfos(relays);
+  return [invoices, { id: 'shop', label: 'Shop', pubkey: SHOP_PUBKEY, tools: ['get_info', 'create_invoice', 'get_invoice'], operators_only: false, relays }, admin];
 }

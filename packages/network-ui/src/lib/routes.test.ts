@@ -23,10 +23,11 @@ import {
   rulesProblem,
   sameDestination,
   usedBy,
+  keysUsing,
   usesDefault,
 } from './routes';
 import type { Destination, NetworkSettings, Rule } from './schemas';
-import { activePool, group, keyInfos, lane, settings } from '../test-helpers';
+import { activePool, fourKeys, group, keyInfos, lane, settings } from '../test-helpers';
 
 const ids = ['invoices', 'admin'];
 const keys = [
@@ -297,6 +298,25 @@ describe('words', () => {
     expect(usedBy(s, { proxy: 'tor' }, keys)).toEqual(['group Exits', 'rule 1', 'the fallback of rule 2', 'the default route', 'the default route of ghost']);
     expect(usedBy(s, { group: 'exits' }, keys)).toEqual(['rule 2', 'the default route of Administration']);
     expect(usedBy(s, { proxy: 'i2p' }, keys)).toEqual([]);
+  });
+
+  it('lists the keys that may send relays through a proxy or a group', () => {
+    const four = fourKeys();
+    const base = setup([]).proxies;
+    // The default route is tor: every key.
+    expect(keysUsing(base, { proxy: 'tor' }, four)).toEqual(['invoices', 'catering', 'oven', 'admin']);
+    const s = {
+      ...base,
+      default: 'direct' as Destination,
+      default_keys: { admin: { group: 'exits' } } as Record<string, Destination>,
+      rules: [rule(['*.onion'], { proxy: 'i2p' }, { keys: ['catering'] }), rule(['*'], 'direct', { keys: ['oven'] }), rule(['*.lan'], { proxy: 'i2p' }, { keys: ['invoices'], fallback: { to: { proxy: 'vpn' } } })],
+    };
+    expect(keysUsing(s, { proxy: 'i2p' }, four)).toEqual(['invoices', 'catering']);
+    // Through the group the administration key's default route points at, and a fallback.
+    expect(keysUsing(s, { proxy: 'vpn' }, four)).toEqual(['invoices', 'admin']);
+    expect(keysUsing(s, { group: 'exits' }, four)).toEqual(['admin']);
+    expect(keysUsing(s, { proxy: 'tor' }, four)).toEqual(['admin']);
+    expect(keysUsing({ ...s, default_keys: {} }, { proxy: 'tor' }, four)).toEqual([]);
   });
 
   it('starts a new rule at the first group, else the first proxy, else direct', () => {

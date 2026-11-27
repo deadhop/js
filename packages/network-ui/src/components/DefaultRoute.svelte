@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { POLICIES, defaultFor, directEnd } from '../lib/routes';
+  import { POLICIES, defaultFor, destination, directEnd } from '../lib/routes';
+  import { displayOrder } from '../lib/keys';
+  import KeyTag from './KeyTag.svelte';
   import type { Destination, KeyInfo, ProxySettings } from '../lib/schemas';
   import DestinationPicker from './DestinationPicker.svelte';
 
@@ -30,6 +32,11 @@
     proxies.default_keys = on ? { ...rest, [id]: proxies.default } : rest;
   }
   const setKey = (id: string, d: Destination) => (proxies.default_keys = { ...proxies.default_keys, [id]: d });
+
+  /** With three keys or more, the keys that follow the service default share one line; each can be set apart. */
+  const grouped = $derived(keys.length > 2);
+  const following = $derived(displayOrder(keys).filter((k) => proxies.default_keys[k.id] === undefined));
+  const shown = $derived(grouped ? displayOrder(keys).filter((k) => proxies.default_keys[k.id] !== undefined) : keys);
 </script>
 
 <section class="card rule-editor" aria-labelledby="default-editor-title">
@@ -41,7 +48,16 @@
         <legend>For every key</legend>
         <DestinationPicker name="default-to" label="Everything else goes" {proxies} value={proxies.default} onpick={(d) => (proxies.default = d)} />
       </fieldset>
-      {#each keys as k (k.id)}
+      {#if grouped && following.length > 0}
+        <div class="same-default" role="group" aria-label="Keys that follow the service default">
+          {#each following as k (k.id)}<KeyTag {keys} id={k.id} />{/each}
+          <span class="hint">{`${following.length === 1 ? 'follows' : 'follow'} the service default (${destination(proxies.default, proxies).toLowerCase()}).`}</span>
+          {#each following as k (k.id)}
+            <button type="button" class="sm" aria-label={`Set ${k.label} separately`} onclick={() => override(k.id, true)}>{following.length === 1 ? 'Set separately' : `Set ${k.label} separately`}</button>
+          {/each}
+        </div>
+      {/if}
+      {#each shown as k (k.id)}
         {@const own = proxies.default_keys[k.id]}
         <fieldset class="rule-step">
           <legend>{`For the ${k.label} key`}</legend>

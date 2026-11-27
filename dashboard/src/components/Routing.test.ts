@@ -169,7 +169,7 @@ describe('the relays view', () => {
     const routes = [...ROUTES.filter((x) => x.relay !== LAN), r('invoices', LAN, 4, 'direct', null, 'rule'), r('admin', LAN, null, 'off', null, 'blocked')];
     setup('relays', base({}, { rules: [...RULES.slice(0, 4), rule([A, C], { proxy: 'vpn' }, { fallback: { to: { group: 'exits' } }, keys: ['admin'] })] }), proxyPool({ ...POOL, routes }));
     await screen.findByText(A);
-    const row = (url: string) => screen.getByText(url).closest('li')!;
+    const row = (url: string) => screen.getByText(url).closest('tr')!;
     await waitFor(() => expect(within(row(A)).getByText('tor')).toBeTruthy());
     expect(within(row(FIPS)).getByText('Direct')).toBeTruthy();
     expect(within(row(LAN)).getByText('Differs per key')).toBeTruthy();
@@ -206,7 +206,7 @@ describe('the relays view', () => {
     );
     await screen.findByText(A);
     await waitFor(() => expect(screen.getByText('socks5://nobody:1'.replace('socks5://nobody:1', 'nobody'))).toBeTruthy());
-    expect(within(screen.getByText(C).closest('li')!).getByText('No connection')).toBeTruthy();
+    expect(within(screen.getByText(C).closest('tr')!).getByText('No connection')).toBeTruthy();
     await fireEvent.click(screen.getByRole('button', { name: 'Why wss://new.example goes this way' }));
     const panel = screen.getByRole('region', { name: 'Why wss://new.example goes this way' });
     expect(within(panel).getAllByText('Not reported by the service yet.')).toHaveLength(2);
