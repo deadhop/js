@@ -66,10 +66,12 @@
       Takings per invoice key, for the invoices created in the period. Every key draws on the same wallet, so the total is what the wallet received through invoices.
     </p>
   </div>
-  <div class="segmented" role="group" aria-label="Period">
-    {#each PERIODS as p (p.value)}
-      <button class={period === p.value ? 'primary' : ''} aria-pressed={period === p.value} onclick={() => (period = p.value)}>{p.label}</button>
-    {/each}
+  <div class="page-actions">
+    <div class="segmented" role="group" aria-label="Period">
+      {#each PERIODS as p (p.value)}
+        <button class={period === p.value ? 'primary' : ''} aria-pressed={period === p.value} onclick={() => (period = p.value)}>{p.label}</button>
+      {/each}
+    </div>
   </div>
 </header>
 

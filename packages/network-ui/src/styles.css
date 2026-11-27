@@ -1198,12 +1198,24 @@ dialog.replace-relay h2 {
   width: 100%;
   font-size: 0.875rem;
 }
+/* The pages' own table headers are small uppercase labels; the matrix's
+   header cells hold relays and key names, so they keep the body text. */
+.relay-matrix th {
+  font-family: inherit;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--text);
+}
 .relay-matrix th,
 .relay-matrix td {
   padding: 0.5rem;
   border-bottom: 1px solid var(--line);
   background: var(--card);
   vertical-align: middle;
+}
+.relay-matrix tbody th {
+  font-weight: 400;
+  text-align: left;
 }
 .relay-matrix thead th {
   font-size: 0.8125rem;
