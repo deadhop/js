@@ -173,7 +173,7 @@ describe('Overview', () => {
     expect(screen.getByText('The threshold is reached: a sweep is due.').className).toBe('warning');
     expect(screen.getByText('on').className).toBe('badge confirmed');
     const relays = screen.getByRole('region', { name: 'Relays' });
-    expect([...relays.querySelectorAll('.badge')].map((b) => b.className)).toEqual(['badge expired', 'badge expired']);
+    expect([...relays.querySelectorAll('.relay-ms.down')].map((b) => b.textContent)).toEqual(['disconnected', 'connecting']);
     expect(relays.querySelector('.dot')!.className).toBe('dot bad');
     expect(screen.getByRole('button', { name: 'Start invoicing' })).toBeTruthy();
   });
@@ -471,17 +471,17 @@ describe('Overview', () => {
       check('wss://gone.example', { status: 'down', connects: false, forwards: null, ms: null, detail: 'Could not connect to the relay.' }),
     ];
     const t = setup({ getHealth: vi.fn().mockResolvedValue(health({ relays, relay_health })) });
-    const list = (await screen.findByRole('region', { name: 'Relays' })).querySelectorAll('li');
-    const rows = [...list].map((li) => [li.querySelector('.dot')!.className, li.querySelector('.relay-note')!.textContent]);
+    const list = (await screen.findByRole('region', { name: 'Relays' })).querySelectorAll('tbody tr');
+    const rows = [...list].map((tr) => [tr.querySelector('.dot')!.className, tr.querySelector('.relay-note')?.textContent ?? '', tr.querySelector('.relay-ms')!.textContent]);
     expect(rows).toEqual([
-      ['dot ok', 'carries ContextVM events · 84 ms'],
-      ['dot warn', 'The relay is rate-limiting us: rate-limited.'],
-      ['dot bad', 'Could not connect to the relay.'],
-      ['dot bad', 'not checked yet'],
+      ['dot ok', '', '84 ms'],
+      ['dot warn', 'The relay is rate-limiting us: rate-limited.', '—'],
+      ['dot bad', 'Could not connect to the relay.', 'disconnected'],
+      ['dot bad', 'not checked yet', 'connecting'],
     ]);
 
-    // A relay only some keys use says which; one every key uses says nothing.
-    expect([...list].map((li) => li.querySelector('.key-badges')?.textContent ?? '')).toEqual(['', 'Public invoices', '', 'Administration']);
+    // Which keys use each relay, in a few words.
+    expect([...list].map((tr) => tr.querySelector('.serves > span:last-child')!.textContent)).toEqual(['All keys', 'Public invoices', 'All keys', 'Administration']);
 
     let finish: (v: unknown) => void = () => undefined;
     t.checkRelays.mockReturnValueOnce(new Promise((r) => (finish = r)));
@@ -502,8 +502,8 @@ describe('Overview', () => {
       relays: [relayStats({ relay: 'ws://127.0.0.1:7777/', checks: 10, check_failures: 0, sends: 30, send_failures: 1 })],
     });
     const t = setup({ getRelayHistory: vi.fn().mockResolvedValue(history) });
-    const li = (await screen.findByRole('region', { name: 'Relays' })).querySelector('li')!;
-    expect(li.querySelector('.rate-chip')!.textContent).toBe('2.5% errors');
+    const li = (await screen.findByRole('region', { name: 'Relays' })).querySelector('tbody tr')!;
+    expect(li.querySelector('.rate-chip')!.textContent).toBe('2.5%');
     expect(li.querySelector('.rate-chip')!.className).toBe('rate-chip warn');
     expect(li.querySelector('svg.bars')!.getAttribute('aria-label')).toContain('ws://127.0.0.1:7777, last day');
     expect(t.getRelayHistory).toHaveBeenCalledWith('1d');
@@ -513,14 +513,14 @@ describe('Overview', () => {
 
   it('leaves the error rate out when the history cannot be read', async () => {
     setup({ getRelayHistory: vi.fn().mockRejectedValue(new Error('unauthorized')) });
-    const li = (await screen.findByRole('region', { name: 'Relays' })).querySelector('li')!;
+    const li = (await screen.findByRole('region', { name: 'Relays' })).querySelector('tbody tr')!;
     expect(li.querySelector('.rate-chip')).toBeNull();
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('shows a relay without a check by its live connection', async () => {
     setup();
-    const li = (await screen.findByRole('region', { name: 'Relays' })).querySelector('li')!;
+    const li = (await screen.findByRole('region', { name: 'Relays' })).querySelector('tbody tr')!;
     expect(li.querySelector('.dot')!.className).toBe('dot ok');
     expect(li.querySelector('.relay-note')!.textContent).toBe('not checked yet');
   });
