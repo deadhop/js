@@ -2,16 +2,14 @@
   import Loading from '@deadhop/network-ui/components/Loading.svelte';
   import { poll } from '@deadhop/network-ui/lib/poll';
   import type { ControlAction, PayApi } from '../lib/api';
-  import type { AdminInvoice, Health, InvoiceKeyList, Metrics, PrivacyAudit, Range, RelayHealth, RelayHistory, Series } from '../lib/schemas';
+  import type { AdminInvoice, Health, InvoiceKeyList, Metrics, PrivacyAudit, Range, RelayHistory, Series } from '../lib/schemas';
   import { cutOff, daysAgo, invoiceCount, listUrls, nowSecs, npubOf, openCount, percent, relayState, relayTone, shortNpub, totalsOf } from '../lib/invoicekeys';
   import KeyChip from './KeyChip.svelte';
   import { statusLabel } from '@deadhop/network-ui/lib/format';
   import { dropId, formatBtc, formatBytes, formatDuration, formatSats, formatTime } from '@deadhop/network-ui/lib/format';
-  import { errorRate, statsFor } from '@deadhop/network-ui/lib/relays';
   import { defaultGroup } from '@deadhop/network-ui/lib/routeview';
   import Chart from './Chart.svelte';
-  import RelayBars from '@deadhop/network-ui/components/RelayBars.svelte';
-  import KeyBadges from '@deadhop/network-ui/components/KeyBadges.svelte';
+  import Relays from './relays/Relays.svelte';
   import ServiceKey from './ServiceKey.svelte';
   import Warnings from './Warnings.svelte';
 
@@ -101,19 +99,7 @@
     start: 'Invoicing started.',
     restart: 'Reconnecting to the relays. This page may need a few seconds to get answers again.',
   };
-  const DOT: Record<RelayHealth['status'], string> = { ok: 'ok', degraded: 'warn', down: 'bad' };
   let checking = $state(false);
-
-  /** The last end-to-end check of a relay, if one ran. */
-  function relayCheck(h: Health, url: string): RelayHealth | null {
-    const bare = (u: string) => u.replace(/\/$/, '');
-    return h.relay_health.find((c) => bare(c.relay) === bare(url)) ?? null;
-  }
-
-  function relayNote(c: RelayHealth | null): string {
-    if (c === null) return 'not checked yet';
-    return c.status === 'ok' ? `carries ContextVM events · ${c.ms} ms` : c.detail;
-  }
 
   async function checkRelays() {
     checking = true;
@@ -422,30 +408,7 @@
   </section>
 
   <section class="card" aria-labelledby="o-relays">
-    <div class="card-head">
-      <h2 id="o-relays">Relays</h2>
-      <span class="hint inline">One working relay is enough. Each is checked end to end every 5 minutes.</span>
-      <button class="small" onclick={onConnectivity}>Connectivity</button>
-      <button class="small" onclick={checkRelays} disabled={checking}>{checking ? 'Checking…' : 'Check now'}</button>
-    </div>
-    <ul class="plain relay-list">
-      {#each health.relays as r (r.url)}
-        {@const c = relayCheck(health, r.url)}
-        {@const st = statsFor(history, r.url)}
-        <li>
-          <span class={`dot ${c === null ? (r.connected ? 'ok' : 'bad') : DOT[c.status]}`} aria-hidden="true"></span>
-          <span class="mono url">{r.url}</span>
-          <KeyBadges keys={r.keys} total={health.keys.length} all={health.keys} />
-          <span class={`relay-note ${c === null ? '' : c.status}`}>{relayNote(c)}</span>
-          {#if st}
-            {@const rate = errorRate(st)}
-            <RelayBars points={st.points} label={`${r.url}, last day`} />
-            <span class={`rate-chip ${rate.tone}`} title="Failed health checks and replies, last 24 hours">{`${rate.text} errors`}</span>
-          {/if}
-          <span class={`badge ${r.connected ? 'confirmed' : 'expired'}`}>{r.status}</span>
-        </li>
-      {/each}
-    </ul>
+    <Relays {health} {history} {checking} oncheck={checkRelays} {onConnectivity} />
     {#if health.chain.watch_errors > 0}
       <p class="error">{`${health.chain.watch_errors} invoice${health.chain.watch_errors === 1 ? '' : 's'} could not be read from the chain.`}</p>
     {/if}
