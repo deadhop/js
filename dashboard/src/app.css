@@ -1529,8 +1529,14 @@ dl.fixed dd code {
   flex: 999 1 35rem;
   min-width: 0;
 }
-.split > .add-op {
+.split > .add-col {
   flex: 1 1 20rem;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+.add-op {
   min-width: 0;
   display: flex;
   flex-direction: column;
