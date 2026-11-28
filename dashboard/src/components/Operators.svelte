@@ -3,11 +3,19 @@
   import type { PayApi } from '../lib/api';
   import { normalizePubkey, type AuditLog, type SettingsView } from '../lib/schemas';
   import { formatTime, shortKey } from '@deadhop/network-ui/lib/format';
+  import * as passkeys from '../lib/passkey';
 
   let {
     api,
     confirm = (message: string) => window.confirm(message),
-  }: { api: PayApi; confirm?: (message: string) => boolean } = $props();
+    passkey = passkeys,
+    host = location.host,
+  }: {
+    api: PayApi;
+    confirm?: (message: string) => boolean;
+    passkey?: Pick<typeof passkeys, 'support' | 'createPasskey' | 'usePasskey'>;
+    host?: string;
+  } = $props();
 
   let view = $state<SettingsView | null>(null);
   let audit = $state<AuditLog | null>(null);
@@ -16,6 +24,8 @@
   let error = $state('');
   let notice = $state('');
   let busy = $state(false);
+  let support = $state<passkeys.Support>('no');
+  let passkeyLabel = $state('deadhop operator');
 
   async function load() {
     try {
@@ -29,6 +39,7 @@
 
   $effect(() => {
     void load();
+    void passkey.support().then((s) => (support = s));
   });
 
   async function run(action: () => Promise<SettingsView>, done: string) {
@@ -56,6 +67,27 @@
     await run(() => api.addOperator(key, label), 'Operator added.');
     newOperator = '';
     newLabel = '';
+  }
+
+  // The passkey is asked for again before its key is added, so only a key
+  // that this device can really sign in with becomes an operator.
+  async function addPasskey() {
+    const label = passkeyLabel.trim() || 'deadhop operator';
+    busy = true;
+    error = '';
+    notice = '';
+    let pubkey = '';
+    try {
+      const made = await passkey.createPasskey(label);
+      const again = await passkey.usePasskey(made.id);
+      if (again.pubkey !== made.pubkey) throw new Error('The passkey gave another key when asked again; nothing was added.');
+      pubkey = made.pubkey;
+    } catch (e) {
+      error = (e as Error).message;
+      busy = false;
+      return;
+    }
+    await run(() => api.addOperator(pubkey, label), 'Passkey added. Sign in with it on this address only.');
   }
 
   async function removeOperator(pubkey: string) {
@@ -107,19 +139,38 @@
       </p>
     </section>
 
-    <section class="card add-op" aria-labelledby="add-title">
-      <h2 id="add-title">Add an operator</h2>
-      <div class="field">
-        <label for="op-key">Public key</label>
-        <input id="op-key" class="mono" placeholder="npub1…, nprofile1… or hex" bind:value={newOperator} />
-      </div>
-      <div class="field">
-        <label for="op-label">Label</label>
-        <input id="op-label" placeholder="Who this is" bind:value={newLabel} maxlength="60" />
-      </div>
-      <button class="primary" onclick={addOperator} disabled={busy}>Add operator</button>
-      <p class="hint">After a suspected compromise, check this list and the audit log: a stolen key can add keys to keep access.</p>
-    </section>
+    <div class="add-col">
+      <section class="card add-op" aria-labelledby="add-title">
+        <h2 id="add-title">Add an operator</h2>
+        <div class="field">
+          <label for="op-key">Public key</label>
+          <input id="op-key" class="mono" placeholder="npub1…, nprofile1… or hex" bind:value={newOperator} />
+        </div>
+        <div class="field">
+          <label for="op-label">Label</label>
+          <input id="op-label" placeholder="Who this is" bind:value={newLabel} maxlength="60" />
+        </div>
+        <button class="primary" onclick={addOperator} disabled={busy}>Add operator</button>
+        <p class="hint">After a suspected compromise, check this list and the audit log: a stolen key can add keys to keep access.</p>
+      </section>
+
+      <section class="card add-op" aria-labelledby="pk-title">
+        <h2 id="pk-title">Add a passkey</h2>
+        {#if support === 'no'}
+          <p class="hint">Not available in this browser: it needs https and a password manager with the PRF extension.</p>
+        {:else}
+          <p class="hint">
+            Your device makes a new operator key; you sign in with your fingerprint, face or PIN. It works only on this address: <span class="mono">{host}</span>
+          </p>
+          <div class="field">
+            <label for="pk-label">Name in your password manager</label>
+            <input id="pk-label" bind:value={passkeyLabel} maxlength="60" />
+          </div>
+          <button class="primary" onclick={addPasskey} disabled={busy}>Create passkey</button>
+          <p class="hint">A lost passkey is a lost operator: its key cannot be exported. Keep another operator.</p>
+        {/if}
+      </section>
+    </div>
   </div>
 {/if}
 
